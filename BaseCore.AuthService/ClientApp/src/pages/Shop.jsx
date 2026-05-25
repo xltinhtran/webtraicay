@@ -1,0 +1,616 @@
+﻿import React, { useState, useEffect } from 'react';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
+
+const Shop = () => {
+    const location = useLocation();
+    const navigate = useNavigate(); // Thêm cái này để chuyển trang khi chưa đăng nhập
+
+    const [products, setProducts] = useState([]);
+    const [categories, setCategories] = useState([]);
+    const [featured, setFeatured] = useState([]);
+    const [additionalFilter, setAdditionalFilter] = useState('All');
+
+    const [selectedCategory, setSelectedCategory] = useState(location.state?.category || 'All');
+
+    // Tăng mức giá mặc định lên 30$ cho vừa vặn
+    const [price, setPrice] = useState(30);
+
+    const [showAllFeatured, setShowAllFeatured] = useState(false);
+    const [cartCount, setCartCount] = useState(0);
+
+    const [currentPage, setCurrentPage] = useState(1);
+    const itemsPerPage = 6;
+
+    const [searchQuery, setSearchQuery] = useState(location.state?.searchTerm || '');
+
+    useEffect(() => {
+        if (location.state?.searchTerm !== undefined) {
+            setSearchQuery(location.state.searchTerm);
+        }
+        if (location.state?.category !== undefined) {
+            setSelectedCategory(location.state.category);
+        }
+    }, [location.state]);
+
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [searchQuery, selectedCategory, price, additionalFilter]);
+
+    useEffect(() => {
+        // TẢI MAX 100 SẢN PHẨM (Khóa mõm cái trò ém hàng của C#)
+        fetch('http://localhost:5001/api/products?pageSize=100')
+            .then(res => res.json())
+            .then(data => {
+                const productList = Array.isArray(data) ? data : (data?.items || data?.data || []);
+                setProducts(productList);
+            })
+            .catch(err => console.log("Lỗi tải SP: ", err));
+
+        fetch('http://localhost:5001/api/categories')
+            .then(res => res.json())
+            .then(data => setCategories(data))
+            .catch(err => console.log("Lỗi tải Danh mục: ", err));
+
+        fetch('http://localhost:5001/api/products/featured')
+            .then(res => res.json())
+            .then(data => setFeatured(data))
+            .catch(err => console.log("Lỗi tải SP nổi bật: ", err));
+
+        // ✅ LẤY ID THỰC TẾ ĐỂ ĐẾM SỐ LƯỢNG GIỎ HÀNG
+        const userData = JSON.parse(localStorage.getItem('user') || '{}');
+        const currentUserId = userData.userId || userData.id;
+
+        if (currentUserId) {
+            fetch(`http://localhost:5001/api/carts/${currentUserId}`)
+                .then(res => res.json())
+                .then(data => {
+                    setCartCount(data.length || 0);
+                })
+                .catch(err => console.log("Lỗi đếm giỏ hàng: ", err));
+        } else {
+            setCartCount(0); // Khách vãng lai thì giỏ hàng trống
+        }
+    }, []);
+
+    // RESET SẠCH SẼ KHI KHÁCH BẤM VÀO MỘT DANH MỤC
+    const handleCategoryClick = (e, categoryName) => {
+        e.preventDefault();
+        setSelectedCategory(categoryName);
+        setAdditionalFilter('All'); // Xóa lọc phụ
+        setSearchQuery('');         // Xóa tìm kiếm chữ
+    };
+
+    // ========================================================
+    // BỘ MÁY LỌC ĐÃ ĐƯỢC NÂNG CẤP "THÔNG MINH" HƠN
+    // ========================================================
+    const filteredProducts = products.filter(item => {
+        // 1. Lọc Category (Đề phòng API không nhả Tên, ta check cả ID)
+        const targetCategory = categories.find(c => c.name === selectedCategory);
+        const matchCategory = selectedCategory === 'All'
+            || item.categoryName === selectedCategory
+            || item.category?.name === selectedCategory
+            || (targetCategory && item.categoryId === targetCategory.id);
+
+        // 2. Lọc Tìm kiếm
+        const matchSearch = (item.name || '').toLowerCase().includes(searchQuery.toLowerCase());
+
+        // 3. LỌC GIÁ TIỀN (ĐÃ ÉP KIỂU SANG SỐ THỰC FLOAT)
+        const actualPrice = (item.discountPrice || item.DiscountPrice)
+            ? parseFloat(item.discountPrice || item.DiscountPrice)
+            : parseFloat(item.price);
+        const currentSliderPrice = parseFloat(price);
+        const matchPrice = currentSliderPrice === 0 || actualPrice <= currentSliderPrice;
+
+        // 4. Lọc Đặc tính (Additional)
+        let matchAdditional = true;
+        const itemQuality = item.quality || item.Quality;
+        const itemDiscount = item.discountPrice || item.DiscountPrice;
+
+        if (additionalFilter === 'Organic') {
+            matchAdditional = itemQuality === 'Organic';
+        } else if (additionalFilter === 'Fresh') {
+            matchAdditional = itemQuality === 'Fresh';
+        } else if (additionalFilter === 'Expired') {
+            matchAdditional = itemQuality === 'Expired';
+        }
+        else if (additionalFilter === 'Sales' || additionalFilter === 'Discount') {
+            matchAdditional = (itemQuality === 'Sales' || itemQuality === 'Discount') ||
+                (itemDiscount !== null && itemDiscount > 0);
+        }
+
+        return matchCategory && matchSearch && matchPrice && matchAdditional;
+    });
+
+    const totalPages = Math.ceil(filteredProducts.length / itemsPerPage);
+    const currentProducts = filteredProducts.slice(
+        (currentPage - 1) * itemsPerPage,
+        currentPage * itemsPerPage
+    );
+
+    // --- HÀM THÊM GIỎ HÀNG ĐÃ FIX CUST-001 ---
+    const handleAddToCart = async (e, product) => {
+        e.preventDefault();
+
+        // ✅ LẤY ID KHÁCH HÀNG THỰC TẾ
+        const userData = JSON.parse(localStorage.getItem('user') || '{}');
+        const currentUserId = userData.userId || userData.id;
+
+        // 🌟 BẪY AN TOÀN: Chưa đăng nhập chặn lại luôn
+        if (!currentUserId) {
+            alert("Vui lòng đăng nhập để có thể mua hàng!");
+            navigate('/login');
+            return;
+        }
+
+        try {
+            const response = await fetch('http://localhost:5001/api/carts/add', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    userId: currentUserId, // Đã xóa cứng CUST-001
+                    productId: product.id,
+                    quantity: 1
+                })
+            });
+
+            if (response.ok) {
+                alert(`Đã bế em "${product.name}" cất thẳng vào Database SQL an toàn! 🛒`);
+                setCartCount(prev => prev + 1);
+            } else {
+                alert("Lỗi rồi, lưu SQL thất bại!");
+            }
+        } catch (error) {
+            console.error("Lỗi kết nối:", error);
+        }
+    };
+
+    const paginate = (e, pageNumber) => {
+        e.preventDefault();
+        setCurrentPage(pageNumber);
+        window.scrollTo({ top: 400, behavior: 'smooth' });
+    };
+
+    return (
+        <>
+            {/* Navbar start */}
+            <div className="container-fluid fixed-top">
+                <div className="container topbar bg-primary d-none d-lg-block">
+                    <div className="d-flex justify-content-between">
+                        <div className="top-info ps-2">
+                            <small className="me-3">
+                                <i className="fas fa-map-marker-alt me-2 text-secondary"></i>{' '}
+                                <a href="#" className="text-white">236,Hoang Quoc Viet,Ha Noi</a>
+                            </small>
+                            <small className="me-3">
+                                <i className="fas fa-envelope me-2 text-secondary"></i>
+                                <a href="#" className="text-white">Email@Example.com</a>
+                            </small>
+                        </div>
+                        <div className="top-link pe-2">
+                            <a href="#" className="text-white"><small className="text-white mx-2">Privacy Policy</small>/</a>
+                            <a href="#" className="text-white"><small className="text-white mx-2">Terms of Use</small>/</a>
+                            <a href="#" className="text-white"><small className="text-white ms-2">Sales and Refunds</small></a>
+                        </div>
+                    </div>
+                </div>
+                <div className="container px-0">
+                    <nav className="navbar navbar-light bg-white navbar-expand-xl">
+                        <Link to="/" className="navbar-brand"><h1 className="text-primary display-6">Fruitables</h1></Link>
+                        <button className="navbar-toggler py-2 px-3" type="button" data-bs-toggle="collapse" data-bs-target="#navbarCollapse">
+                            <span className="fa fa-bars text-primary"></span>
+                        </button>
+                        <div className="collapse navbar-collapse bg-white" id="navbarCollapse">
+                            <div className="navbar-nav mx-auto">
+                                <Link to="/" className="nav-item nav-link">Home</Link>
+                                <Link to="/shop" className="nav-item nav-link active">Shop</Link>
+                                <Link to="/shop-detail" className="nav-item nav-link">Shop Detail</Link>
+                                <div className="nav-item dropdown">
+                                    <a href="#" className="nav-link dropdown-toggle" data-bs-toggle="dropdown">Pages</a>
+                                    <div className="dropdown-menu m-0 bg-secondary rounded-0">
+                                        <Link to="/cart" className="dropdown-item">Cart</Link>
+                                        <Link to="/checkout" className="dropdown-item">Checkout</Link>
+                                    </div>
+                                </div>
+                                <Link to="/contact" className="nav-item nav-link">Contact</Link>
+                            </div>
+                            <div className="d-flex m-3 me-0">
+                                <button className="btn-search btn border border-secondary btn-md-square rounded-circle bg-white me-4" data-bs-toggle="modal" data-bs-target="#searchModal">
+                                    <i className="fas fa-search text-primary"></i>
+                                </button>
+                                <Link to="/cart" className="position-relative me-4 my-auto">
+                                    <i className="fa fa-shopping-bag fa-2x"></i>
+                                    <span className="position-absolute bg-secondary rounded-circle d-flex align-items-center justify-content-center text-dark px-1" style={{ top: '-5px', left: '15px', height: '20px', minWidth: '20px' }}>{cartCount}</span>
+                                </Link>
+                                <Link to="/login" className="my-auto">
+                                    <i className="fas fa-user fa-2x"></i>
+                                </Link>
+                            </div>
+                        </div>
+                    </nav>
+                </div>
+            </div>
+            {/* Navbar End */}
+
+            {/* Modal Search Start */}
+            <div className="modal fade" id="searchModal" tabIndex="-1" aria-labelledby="exampleModalLabel" aria-hidden="true">
+                <div className="modal-dialog modal-fullscreen">
+                    <div className="modal-content rounded-0">
+                        <div className="modal-header">
+                            <h5 className="modal-title" id="exampleModalLabel">Search by keyword</h5>
+                            <button type="button" className="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                        </div>
+                        <div className="modal-body d-flex align-items-center">
+                            <div className="input-group w-75 mx-auto d-flex">
+                                <input type="search" className="form-control p-3" placeholder="keywords" aria-describedby="search-icon-1" />
+                                <span id="search-icon-1" className="input-group-text p-3"><i className="fa fa-search"></i></span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            {/* Modal Search End */}
+
+            {/* Single Page Header start */}
+            <div className="container-fluid page-header py-5">
+                <h1 className="text-center text-white display-6">Shop</h1>
+                <ol className="breadcrumb justify-content-center mb-0">
+                    <li className="breadcrumb-item"><Link to="/">Home</Link></li>
+                    <li className="breadcrumb-item active text-white">Shop</li>
+                    <li className="breadcrumb-item"><Link to="/cart">Cart</Link></li>
+                </ol>
+            </div>
+            {/* Single Page Header End */}
+
+            {/* Fruits Shop Start*/}
+            <div className="container-fluid fruite py-5">
+                <div className="container py-5">
+                    <h1 className="mb-4">Fresh fruits shop</h1>
+                    <div className="row g-4">
+                        <div className="col-lg-12">
+                            <div className="row g-4">
+                                <div className="col-xl-3">
+                                    <div className="input-group w-100 mx-auto d-flex">
+                                        <input
+                                            type="search"
+                                            className="form-control p-3"
+                                            placeholder="Tìm kiếm sản phẩm..."
+                                            aria-describedby="search-icon-1"
+                                            value={searchQuery}
+                                            onChange={(e) => setSearchQuery(e.target.value)}
+                                        />
+                                        <span id="search-icon-1" className="input-group-text p-3"><i className="fa fa-search"></i></span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div className="row g-4">
+                                <div className="col-lg-3">
+                                    <div className="row g-4">
+                                        <div className="col-lg-12">
+                                            <div className="mb-3">
+                                                <h4>Categories</h4>
+                                                <ul className="list-unstyled fruite-categorie">
+                                                    <li>
+                                                        <div className="d-flex justify-content-between fruite-name">
+                                                            <a href="#" onClick={(e) => handleCategoryClick(e, 'All')} className={selectedCategory === 'All' ? 'text-primary fw-bold' : ''}>
+                                                                <i className="fas fa-apple-alt me-2"></i>All Products
+                                                            </a>
+                                                        </div>
+                                                    </li>
+                                                    {categories.map((cat) => (
+                                                        <li key={cat.id}>
+                                                            <div className="d-flex justify-content-between fruite-name">
+                                                                <a
+                                                                    href="#"
+                                                                    onClick={(e) => handleCategoryClick(e, cat.name)}
+                                                                    className={selectedCategory === cat.name ? 'text-primary fw-bold' : ''}
+                                                                >
+                                                                    <i className="fas fa-apple-alt me-2"></i>{cat.name}
+                                                                </a>
+                                                                <span>({cat.count || 0})</span>
+                                                            </div>
+                                                        </li>
+                                                    ))}
+                                                </ul>
+                                            </div>
+                                        </div>
+
+                                        <div className="col-lg-12">
+                                            <div className="mb-3">
+                                                <h4 className="mb-2">Price</h4>
+                                                <input
+                                                    type="range"
+                                                    className="form-range w-100"
+                                                    id="rangeInput"
+                                                    min="0"
+                                                    max="30"
+                                                    value={price}
+                                                    onChange={(e) => setPrice(e.target.value)}
+                                                />
+                                                <output id="amount" name="amount" htmlFor="rangeInput">{price} $</output>
+                                            </div>
+                                        </div>
+
+                                        <div className="col-lg-12">
+                                            <div className="mb-3">
+                                                <h4>Additional</h4>
+                                                <div className="mb-2">
+                                                    <input type="radio" className="me-2" id="add-organic" name="additional"
+                                                        checked={additionalFilter === 'Organic'}
+                                                        onClick={() => setAdditionalFilter(prev => prev === 'Organic' ? 'All' : 'Organic')}
+                                                        readOnly
+                                                    />
+                                                    <label htmlFor="add-organic"> Organic</label>
+                                                </div>
+                                                <div className="mb-2">
+                                                    <input type="radio" className="me-2" id="add-fresh" name="additional"
+                                                        checked={additionalFilter === 'Fresh'}
+                                                        onClick={() => setAdditionalFilter(prev => prev === 'Fresh' ? 'All' : 'Fresh')}
+                                                        readOnly
+                                                    />
+                                                    <label htmlFor="add-fresh"> Fresh</label>
+                                                </div>
+                                                <div className="mb-2">
+                                                    <input type="radio" className="me-2" id="add-sales" name="additional"
+                                                        checked={additionalFilter === 'Sales'}
+                                                        onClick={() => setAdditionalFilter(prev => prev === 'Sales' ? 'All' : 'Sales')}
+                                                        readOnly
+                                                    />
+                                                    <label htmlFor="add-sales"> Sales</label>
+                                                </div>
+                                                <div className="mb-2">
+                                                    <input type="radio" className="me-2" id="add-discount" name="additional"
+                                                        checked={additionalFilter === 'Discount'}
+                                                        onClick={() => setAdditionalFilter(prev => prev === 'Discount' ? 'All' : 'Discount')}
+                                                        readOnly
+                                                    />
+                                                    <label htmlFor="add-discount"> Discount</label>
+                                                </div>
+                                                <div className="mb-2">
+                                                    <input type="radio" className="me-2" id="add-expired" name="additional"
+                                                        checked={additionalFilter === 'Expired'}
+                                                        onClick={() => setAdditionalFilter(prev => prev === 'Expired' ? 'All' : 'Expired')}
+                                                        readOnly
+                                                    />
+                                                    <label htmlFor="add-expired"> Expired</label>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <div className="col-lg-12">
+                                            <h4 className="mb-3">Featured products</h4>
+                                            {featured && featured.length > 0 ? (
+                                                featured.slice(0, showAllFeatured ? featured.length : 3).map((item) => (
+                                                    <div className="d-flex align-items-center justify-content-start mb-4" key={item.id}>
+                                                        <div className="rounded me-4" style={{ width: '100px', height: '100px' }}>
+                                                            <img
+                                                                src={item.imageUrl || '/img/fruite-item-5.jpg'}
+                                                                className="img-fluid rounded"
+                                                                style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                                                                alt={item.name}
+                                                            />
+                                                        </div>
+                                                        <div>
+                                                            <h6 className="mb-2">{item.name}</h6>
+                                                            <div className="d-flex mb-2">
+                                                                {(item.discountPrice || item.DiscountPrice) ? (
+                                                                    <>
+                                                                        <h5 className="fw-bold me-2 text-danger">{(item.discountPrice || item.DiscountPrice)} $</h5>
+                                                                        <h5 className="text-muted text-decoration-line-through">{item.price} $</h5>
+                                                                    </>
+                                                                ) : (
+                                                                    <h5 className="fw-bold me-2">{item.price} $</h5>
+                                                                )}
+                                                            </div>
+                                                            <a href="#" onClick={(e) => handleAddToCart(e, item)} className="btn border border-secondary rounded-pill px-3 text-primary mt-2">
+                                                                <i className="fa fa-shopping-bag me-2 text-primary"></i> Add to cart
+                                                            </a>
+                                                        </div>
+                                                    </div>
+                                                ))
+                                            ) : (
+                                                <p>Đang tải sản phẩm nổi bật...</p>
+                                            )}
+
+                                            <div className="d-flex justify-content-center my-4">
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.preventDefault();
+                                                        setShowAllFeatured(!showAllFeatured);
+                                                    }}
+                                                    className="btn border border-secondary px-4 py-3 rounded-pill text-primary w-100"
+                                                >
+                                                    {showAllFeatured ? 'Show Less' : 'View More'}
+                                                </button>
+                                            </div>
+                                        </div>
+
+                                        <div className="col-lg-12">
+                                            <div className="position-relative">
+                                                <img src="/img/banner-fruits.jpg" className="img-fluid w-100 rounded" alt="" />
+                                                <div className="position-absolute" style={{ top: '50%', right: '10px', transform: 'translateY(-50%)' }}>
+                                                    <h3 className="text-secondary fw-bold">Fresh <br /> Fruits <br /> Banner</h3>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div className="col-lg-9">
+                                    <div className="row g-4 justify-content-center">
+
+                                        {Array.isArray(currentProducts) && currentProducts.length > 0 ? (
+                                            currentProducts.map((item) => (
+                                                <div className="col-md-6 col-lg-6 col-xl-4" key={item.id}>
+                                                    <div className="rounded position-relative fruite-item">
+                                                        <div className="fruite-img">
+                                                            <Link to={`/shop-detail/${item.id}`}>
+                                                                <img src={item.imageUrl} className="img-fluid w-100 rounded-top" alt={item.name} />
+                                                            </Link>
+                                                        </div>
+                                                        <div className="text-white bg-secondary px-3 py-1 rounded position-absolute" style={{ top: '10px', left: '10px' }}>
+                                                            {item.categoryName || 'Sản phẩm'}
+                                                        </div>
+                                                        <div className="p-4 border border-secondary border-top-0 rounded-bottom">
+                                                            <h4>{item.name}</h4>
+                                                            <p>{item.description}</p>
+                                                            <div className="d-flex justify-content-between flex-lg-wrap">
+                                                                <p className="text-dark fs-5 fw-bold mb-0">
+                                                                    {(item.discountPrice || item.DiscountPrice) ? (
+                                                                        <>
+                                                                            <span className="text-danger">${(item.discountPrice || item.DiscountPrice)}</span>
+                                                                            <span className="text-muted text-decoration-line-through fs-6 ms-2">${item.price}</span> / kg
+                                                                        </>
+                                                                    ) : (
+                                                                        `$${item.price} / kg`
+                                                                    )}
+                                                                </p>
+                                                                <a href="#" onClick={(e) => handleAddToCart(e, item)} className="btn border border-secondary rounded-pill px-3 text-primary">
+                                                                    <i className="fa fa-shopping-bag me-2 text-primary"></i> Add to cart
+                                                                </a>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            ))
+                                        ) : (
+                                            <div className="col-12 text-center mt-5">
+                                                <h4>Không tìm thấy sản phẩm nào thuộc danh mục này! 😥</h4>
+                                            </div>
+                                        )}
+
+                                        {totalPages > 1 && (
+                                            <div className="col-12">
+                                                <div className="pagination d-flex justify-content-center mt-5">
+
+                                                    <a href="#"
+                                                        className={`rounded ${currentPage === 1 ? 'disabled' : ''}`}
+                                                        onClick={(e) => { e.preventDefault(); if (currentPage > 1) paginate(e, currentPage - 1); }}
+                                                        style={currentPage === 1 ? { pointerEvents: 'none', opacity: 0.5 } : {}}
+                                                    >
+                                                        &laquo;
+                                                    </a>
+
+                                                    {[...Array(totalPages)].map((_, index) => (
+                                                        <a href="#"
+                                                            key={index}
+                                                            className={`rounded ${currentPage === index + 1 ? 'active' : ''}`}
+                                                            onClick={(e) => paginate(e, index + 1)}
+                                                        >
+                                                            {index + 1}
+                                                        </a>
+                                                    ))}
+
+                                                    <a href="#"
+                                                        className={`rounded ${currentPage === totalPages ? 'disabled' : ''}`}
+                                                        onClick={(e) => { e.preventDefault(); if (currentPage < totalPages) paginate(e, currentPage + 1); }}
+                                                        style={currentPage === totalPages ? { pointerEvents: 'none', opacity: 0.5 } : {}}
+                                                    >
+                                                        &raquo;
+                                                    </a>
+
+                                                </div>
+                                            </div>
+                                        )}
+
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            {/* Fruits Shop End*/}
+
+            {/* Footer Start */}
+            <div className="container-fluid bg-dark text-white-50 footer pt-5 mt-5">
+                <div className="container py-5">
+                    <div className="pb-4 mb-4" style={{ borderBottom: '1px solid rgba(226, 175, 24, 0.5)' }}>
+                        <div className="row g-4">
+                            <div className="col-lg-3">
+                                <a href="#">
+                                    <h1 className="text-primary mb-0">Fruitables</h1>
+                                    <p className="text-secondary mb-0">Fresh products</p>
+                                </a>
+                            </div>
+                            <div className="col-lg-6">
+                                <div className="position-relative mx-auto">
+                                    <input className="form-control border-0 w-100 py-3 px-4 rounded-pill" type="number" placeholder="Your Email" />
+                                    <button type="submit" className="btn btn-primary border-0 border-secondary py-3 px-4 position-absolute rounded-pill text-white" style={{ top: 0, right: 0 }}>Subscribe Now</button>
+                                </div>
+                            </div>
+                            <div className="col-lg-3">
+                                <div className="d-flex justify-content-end pt-3">
+                                    <a className="btn  btn-outline-secondary me-2 btn-md-square rounded-circle" href=""><i className="fab fa-twitter"></i></a>
+                                    <a className="btn btn-outline-secondary me-2 btn-md-square rounded-circle" href=""><i className="fab fa-facebook-f"></i></a>
+                                    <a className="btn btn-outline-secondary me-2 btn-md-square rounded-circle" href=""><i className="fab fa-youtube"></i></a>
+                                    <a className="btn btn-outline-secondary btn-md-square rounded-circle" href=""><i className="fab fa-linkedin-in"></i></a>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div className="row g-5">
+                        <div className="col-lg-3 col-md-6">
+                            <div className="footer-item">
+                                <h4 className="text-light mb-3">Why People Like us!</h4>
+                                <p className="mb-4">typesetting, remaining essentially unchanged. It was
+                                    popularised in the 1960s with the like Aldus PageMaker including of Lorem Ipsum.</p>
+                                <a href="" className="btn border-secondary py-2 px-4 rounded-pill text-primary">Read More</a>
+                            </div>
+                        </div>
+                        <div className="col-lg-3 col-md-6">
+                            <div className="d-flex flex-column text-start footer-item">
+                                <h4 className="text-light mb-3">Shop Info</h4>
+                                <a className="btn-link" href="">About Us</a>
+                                <a className="btn-link" href="">Contact Us</a>
+                                <a className="btn-link" href="">Privacy Policy</a>
+                                <a className="btn-link" href="">Terms & Condition</a>
+                                <a className="btn-link" href="">Return Policy</a>
+                                <a className="btn-link" href="">FAQs & Help</a>
+                            </div>
+                        </div>
+                        <div className="col-lg-3 col-md-6">
+                            <div className="d-flex flex-column text-start footer-item">
+                                <h4 className="text-light mb-3">Account</h4>
+                                <a className="btn-link" href="">My Account</a>
+                                <a className="btn-link" href="">Shop details</a>
+                                <a className="btn-link" href="">Shopping Cart</a>
+                                <a className="btn-link" href="">Wishlist</a>
+                                <a className="btn-link" href="">Order History</a>
+                                <a className="btn-link" href="">International Orders</a>
+                            </div>
+                        </div>
+                        <div className="col-lg-3 col-md-6">
+                            <div className="footer-item">
+                                <h4 className="text-light mb-3">Contact</h4>
+                                <p>Address: 1429 Netus Rd, NY 48247</p>
+                                <p>Email: Example@gmail.com</p>
+                                <p>Phone: +0123 4567 8910</p>
+                                <p>Payment Accepted</p>
+                                <img src="/img/payment.png" className="img-fluid" alt="" />
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            {/* Footer End */}
+
+            {/* Copyright Start */}
+            <div className="container-fluid copyright bg-dark py-4">
+                <div className="container">
+                    <div className="row">
+                        <div className="col-md-6 text-center text-md-start mb-3 mb-md-0">
+                            <span className="text-light"><a href="#"><i className="fas fa-copyright text-light me-2"></i>Fruitables System</a>, All right reserved.</span>
+                        </div>
+                        <div className="col-md-6 my-auto text-center text-md-end text-white">
+                            Designed By <a className="border-bottom" href="https://htmlcodex.com">HTML Codex</a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            {/* Copyright End */}
+
+            <a href="#" className="btn btn-primary border-3 border-primary rounded-circle back-to-top"><i className="fa fa-arrow-up"></i></a>
+        </>
+    );
+};
+
+export default Shop;
