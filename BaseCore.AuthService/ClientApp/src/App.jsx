@@ -20,6 +20,7 @@ import ShopDetail from './pages/ShopDetail';
 import Contact from './pages/Contact';
 import Cart from './pages/Cart';
 import Checkout from './pages/Checkout';
+import MyOrders from './pages/MyOrders';
 
 
 function App() {
@@ -35,6 +36,7 @@ function App() {
                     <Route path="/contact" element={<Contact />} />
                     <Route path="/cart" element={<Cart />} />
                     <Route path="/checkout" element={<Checkout />} />
+                    <Route path="/my-orders" element={<MyOrders />} />
                     
 
                     {/* ===== HỆ THỐNG ĐĂNG NHẬP & QUẢN TRỊ ===== */}

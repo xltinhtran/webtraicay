@@ -3,6 +3,7 @@ using BaseCore.Common;
 using BaseCore.Services.Authen;
 using System.Threading.Tasks;
 
+
 namespace BaseCore.AuthService.Controllers
 {
     [Route("api/[controller]")]

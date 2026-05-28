@@ -84,11 +84,11 @@ if (app.Environment.IsDevelopment())
     app.UseSwagger();
     app.UseSwaggerUI();
 }
-
+app.UseStaticFiles();
 app.UseCors("AllowAll");
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
 
-Console.WriteLine("BaseCore Auth Service running on port 5002");
+Console.WriteLine("BaseCore Auth Service running on port 5000");
 app.Run();

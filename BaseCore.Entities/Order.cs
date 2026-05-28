@@ -15,7 +15,10 @@ public partial class Order
 
     // SỬA DÒNG NÀY NÈ NÍ: Thêm dấu ? vào đây
     public string? CouponCode { get; set; }
-
+    public string? ReceiverName { get; set; }
+    public string? Phone { get; set; }
+    public string? CancelReason { get; set; }
+    public DateTime? CancelledAt { get; set; }
     public virtual ICollection<OrderDetail> OrderDetails { get; set; } = new List<OrderDetail>();
     public virtual User User { get; set; } = null!;
 }

@@ -1,80 +1,234 @@
 ﻿// src/services/api.js
 import axios from 'axios';
 
-// Đã trỏ thẳng vào API Gateway. (Nhớ đổi port 5000 nếu Gateway của bạn chạy port khác)
-const API_BASE_URL = 'http://localhost:5000/api';
+// AuthService: đăng nhập, đăng ký, user
+const AUTH_BASE_URL = 'http://localhost:5000/api';
 
-const api = axios.create({
-    baseURL: API_BASE_URL,
+// APIService: products, categories, carts, orders, coupons, reviews
+const API_SERVICE_BASE_URL = 'http://localhost:5001/api';
+
+// Dùng để hiển thị ảnh review / ảnh upload từ APIService
+export const API_STATIC_BASE_URL = 'http://localhost:5001';
+
+// ===============================
+// AXIOS CLIENTS
+// ===============================
+
+const authClient = axios.create({
+    baseURL: AUTH_BASE_URL,
     headers: {
-        'Content-Type': 'application/json',
-    },
+        'Content-Type': 'application/json'
+    }
 });
 
-// Add token to requests
-api.interceptors.request.use(
-    (config) => {
-        const token = localStorage.getItem('token');
-        if (token) {
-            config.headers.Authorization = `Bearer ${token}`;
-        }
-        return config;
-    },
-    (error) => Promise.reject(error)
-);
-
-// Handle 401 responses
-api.interceptors.response.use(
-    (response) => response,
-    (error) => {
-        if (error.response?.status === 401) {
-            localStorage.removeItem('token');
-            localStorage.removeItem('user');
-            window.location.href = '/login';
-        }
-        return Promise.reject(error);
+const apiClient = axios.create({
+    baseURL: API_SERVICE_BASE_URL,
+    headers: {
+        'Content-Type': 'application/json'
     }
-);
+});
 
-// Auth API
+// ===============================
+// TOKEN INTERCEPTOR
+// ===============================
+
+const attachToken = (config) => {
+    const token = localStorage.getItem('token');
+
+    if (token) {
+        config.headers.Authorization = `Bearer ${token}`;
+    }
+
+    return config;
+};
+
+const handleRequestError = (error) => {
+    return Promise.reject(error);
+};
+
+const handleResponseSuccess = (response) => {
+    return response;
+};
+
+const handleResponseError = (error) => {
+    if (error.response?.status === 401) {
+        localStorage.removeItem('token');
+        localStorage.removeItem('user');
+        window.location.href = '/login';
+    }
+
+    return Promise.reject(error);
+};
+
+authClient.interceptors.request.use(attachToken, handleRequestError);
+apiClient.interceptors.request.use(attachToken, handleRequestError);
+
+authClient.interceptors.response.use(handleResponseSuccess, handleResponseError);
+apiClient.interceptors.response.use(handleResponseSuccess, handleResponseError);
+
+// ===============================
+// AUTH API - PORT 5000
+// ===============================
+
 export const authApi = {
-    login: (userName, password) => api.post('/auth/login', { userName, password }),
-    register: (userData) => api.post('/auth/register', userData),
+    login: (userName, password) =>
+        authClient.post('/auth/login', {
+            Username: userName,
+            Password: password
+        }),
+
+    register: (userData) =>
+        authClient.post('/auth/register', userData)
 };
 
-// Products API
-export const productsApi = {
-    getAll: (params) => api.get('/products', { params }),
-    getById: (id) => api.get(`/products/${id}`),
-    create: (data) => api.post('/products', data),
-    update: (id, data) => api.put(`/products/${id}`, data),
-    delete: (id) => api.delete(`/products/${id}`),
-    filter: (name, startDate, endDate) =>
-        api.get('/products/filter', { params: { name, startDate, endDate } })
-};
+// ===============================
+// USERS API - PORT 5000
+// Nếu UsersController nằm bên APIService thì đổi authClient thành apiClient
+// ===============================
 
-// Categories API
-export const categoriesApi = {
-    getAll: () => api.get('/categories'),
-    getById: (id) => api.get(`/categories/${id}`),
-    create: (data) => api.post('/categories', data),
-    update: (id, data) => api.put(`/categories/${id}`, data),
-    delete: (id) => api.delete(`/categories/${id}`),
-};
-
-// Users API
 export const usersApi = {
-    getAll: (params) => api.get('/users', { params }),
-    getById: (id) => api.get(`/users/${id}`),
-    create: (data) => api.post('/users', data),
-    update: (id, data) => api.put(`/users/${id}`, data),
-    delete: (id) => api.delete(`/users/${id}`),
+    getAll: (params) =>
+        authClient.get('/users', { params }),
+
+    getById: (id) =>
+        authClient.get(`/users/${id}`),
+
+    create: (data) =>
+        authClient.post('/users', data),
+
+    update: (id, data) =>
+        authClient.put(`/users/${id}`, data),
+
+    delete: (id) =>
+        authClient.delete(`/users/${id}`)
 };
+
+// ===============================
+// PRODUCTS API - PORT 5001
+// ===============================
+
+export const productsApi = {
+    getAll: (params) =>
+        apiClient.get('/products', { params }),
+
+    getById: (id) =>
+        apiClient.get(`/products/${id}`),
+
+    getFeatured: () =>
+        apiClient.get('/products/featured'),
+
+    create: (data) =>
+        apiClient.post('/products', data),
+
+    update: (id, data) =>
+        apiClient.put(`/products/${id}`, data),
+
+    delete: (id) =>
+        apiClient.delete(`/products/${id}`),
+
+    filter: (name, startDate, endDate) =>
+        apiClient.get('/products/filter', {
+            params: {
+                name,
+                startDate,
+                endDate
+            }
+        })
+};
+
+// ===============================
+// CATEGORIES API - PORT 5001
+// ===============================
+
+export const categoriesApi = {
+    getAll: () =>
+        apiClient.get('/categories'),
+
+    getById: (id) =>
+        apiClient.get(`/categories/${id}`),
+
+    create: (data) =>
+        apiClient.post('/categories', data),
+
+    update: (id, data) =>
+        apiClient.put(`/categories/${id}`, data),
+
+    delete: (id) =>
+        apiClient.delete(`/categories/${id}`)
+};
+
+// ===============================
+// ORDERS API - PORT 5001
+// ===============================
 
 export const ordersApi = {
-    getAll: () => api.get('/orders/all'),
-    // Thêm hàm này để gửi yêu cầu đổi trạng thái về Backend
-    updateStatus: (id, status) => api.put(`/orders/${id}/status`, { status }),
+    getAll: () =>
+        apiClient.get('/orders/all'),
+
+    updateStatus: (id, status) =>
+        apiClient.put(`/orders/${id}/status`, { status }),
+
+    checkout: (orderData) =>
+        apiClient.post('/orders/checkout', orderData),
+
+    getByUserId: (userId) =>
+        apiClient.get(`/orders/user/${userId}`),
+
+    getById: (id) =>
+        apiClient.get(`/orders/${id}`),
+
+    cancelOrder: (id, reason) =>
+        apiClient.put(`/orders/${id}/cancel`, { reason }),
+    updatePendingOrder: (id, data) =>
+        apiClient.put(`/orders/${id}/pending-update`, data),
 };
 
-export default api;
+// ===============================
+// CARTS API - PORT 5001
+// ===============================
+
+export const cartsApi = {
+    getByUserId: (userId) =>
+        apiClient.get(`/carts/${userId}`),
+
+    addToCart: (cartData) =>
+        apiClient.post('/carts/add', cartData),
+
+    removeFromCart: (itemId) =>
+        apiClient.delete(`/carts/remove/${itemId}`)
+};
+
+// ===============================
+// COUPONS API - PORT 5001
+// ===============================
+
+export const couponsApi = {
+    check: (code) =>
+        apiClient.get('/coupons/check', {
+            params: {
+                code
+            }
+        })
+};
+
+// ===============================
+// REVIEWS API - PORT 5001
+// ===============================
+
+export const reviewsApi = {
+    getByProductId: (productId) =>
+        apiClient.get(`/reviews/product/${productId}`),
+
+    submitReview: (formData) =>
+        apiClient.post('/reviews/submit', formData, {
+            headers: {
+                'Content-Type': 'multipart/form-data'
+            }
+        }),
+
+    getSummary: () =>
+        apiClient.get('/reviews/summary')
+};
+
+// Export mặc định là APIService vì đa số trang shop dùng APIService
+export default apiClient;

@@ -1,7 +1,6 @@
-//orderCTL
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore; // Thêm thư viện này để xài lệnh xóa
+using Microsoft.EntityFrameworkCore;
 using BaseCore.Entities;
 using BaseCore.Repository.EFCore;
 using System.Security.Claims;
@@ -9,13 +8,10 @@ using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using System.Linq;
-using BaseCore.Repository; // Thêm thư viện này để lặp và tìm kiếm
+using BaseCore.Repository;
 
 namespace BaseCore.APIService.Controllers
 {
-    /// <summary>
-    /// Order API Controller
-    /// </summary>
     [Route("api/[controller]")]
     [ApiController]
     [Authorize]
@@ -24,15 +20,13 @@ namespace BaseCore.APIService.Controllers
         private readonly IOrderRepositoryEF _orderRepository;
         private readonly IOrderDetailRepositoryEF _orderDetailRepository;
         private readonly IProductRepositoryEF _productRepository;
-
-        // 1. GỌI THÊM THẰNG DbContext VÀO ĐỂ NÓ CHỌC THẲNG VÀO GIỎ HÀNG
         private readonly BaseCoreDbContext _context;
 
         public OrdersController(
             IOrderRepositoryEF orderRepository,
             IOrderDetailRepositoryEF orderDetailRepository,
             IProductRepositoryEF productRepository,
-            BaseCoreDbContext context) // Bơm DbContext vào đây
+            BaseCoreDbContext context)
         {
             _orderRepository = orderRepository;
             _orderDetailRepository = orderDetailRepository;
@@ -40,18 +34,57 @@ namespace BaseCore.APIService.Controllers
             _context = context;
         }
 
-        [HttpGet]
-        public async Task<IActionResult> GetMyOrders()
+        [HttpGet("user/{userId}")]
+        [AllowAnonymous]
+        public async Task<IActionResult> GetOrdersByUserId(string userId)
         {
             try
             {
-                // Sử dụng .AsNoTracking() để tăng tốc và tránh lỗi lặp quan hệ
-                var orders = await _context.Orders.AsNoTracking().ToListAsync();
+                var orders = await _context.Orders
+                    .Where(o => o.UserId == userId)
+                    .OrderByDescending(o => o.OrderDate)
+                    .Select(o => new
+                    {
+                        o.Id,
+                        o.OrderDate,
+                        o.TotalAmount,
+                        o.Status,
+                        o.PaymentMethod,
+                        o.ReceiverName,
+                        o.ShippingAddress,
+                        o.Phone,
+                        o.OrderNotes,
+                        o.CancelReason,
+                        o.CancelledAt,
+                        Details = _context.OrderDetails
+                             .Where(od => od.OrderId == o.Id)
+                             .Select(od => new
+                              {
+                                  od.ProductId,
+                                ProductName = _context.Products
+                                 .Where(p => p.Id == od.ProductId)
+                                 .Select(p => p.Name)
+                                 .FirstOrDefault(),
+
+                               ProductImageUrl = _context.Products
+                                  .Where(p => p.Id == od.ProductId)
+                                  .Select(p => p.ImageUrl)
+                                   .FirstOrDefault(),
+
+                                od.Quantity,
+                                od.UnitPrice,
+
+                                 IsReviewed = _context.ProductReviews
+                                       .Any(r => r.OrderId == o.Id && r.ProductId == od.ProductId)
+                                  }) .ToList()
+                    })
+                    .ToListAsync();
+
                 return Ok(orders);
             }
             catch (Exception ex)
             {
-                return StatusCode(500, $"Lỗi DB: {ex.Message}");
+                return StatusCode(500, $"Lỗi DB khi tải đơn hàng: {ex.Message}");
             }
         }
 
@@ -63,11 +96,10 @@ namespace BaseCore.APIService.Controllers
             {
                 var query = _context.Orders.AsNoTracking().AsQueryable();
 
-                if (!string.IsNullOrEmpty(keyword))
+                if (!string.IsNullOrWhiteSpace(keyword))
                 {
                     string searchLower = keyword.ToLower().Trim();
 
-                    // 1. DỊCH TRẠNG THÁI TỪ VIỆT SANG ANH
                     string mappedStatus = searchLower switch
                     {
                         var s when s.Contains("chờ xử lý") => "Pending",
@@ -78,33 +110,27 @@ namespace BaseCore.APIService.Controllers
                         _ => searchLower
                     };
 
-                    // 🌟 2. BỘ XỬ LÝ SỐ THÔNG MINH (CHỐNG LỖI SẬP EF CORE)
-                    // Thử xem khách gõ vào có phải là con số không (vd: "34")
                     bool isNumeric = int.TryParse(searchLower, out int parsedId);
                     bool isDecimal = decimal.TryParse(searchLower, out decimal parsedAmount);
 
-                    // 3. QUÉT DATABASE
                     query = query.Where(o =>
-                        // Quét ID (Chỉ quét nếu khách gõ đúng là số)
                         (isNumeric && o.Id == parsedId) ||
-
-                        // Quét Tổng tiền (Chỉ quét nếu khách gõ đúng là số)
                         (isDecimal && o.TotalAmount == parsedAmount) ||
-
-                        // Quét Trạng thái
                         (o.Status != null && o.Status.ToLower().Contains(mappedStatus)) ||
-
-                        // Quét Tên khách hàng (Bắc cầu sang bảng Users)
                         _context.Users.Any(u => u.Id == o.UserId && u.Name.ToLower().Contains(searchLower))
                     );
                 }
 
                 var orders = await query
                     .OrderByDescending(o => o.OrderDate)
-                    .Select(o => new {
+                    .Select(o => new
+                    {
                         o.Id,
                         o.UserId,
-                        CustomerName = _context.Users.Where(u => u.Id == o.UserId).Select(u => u.Name).FirstOrDefault() ?? "Khách vãng lai",
+                        CustomerName = _context.Users
+                            .Where(u => u.Id == o.UserId)
+                            .Select(u => u.Name)
+                            .FirstOrDefault() ?? "Khách vãng lai",
                         o.TotalAmount,
                         o.Status,
                         o.OrderDate
@@ -123,106 +149,175 @@ namespace BaseCore.APIService.Controllers
         public async Task<IActionResult> GetById(int id)
         {
             var order = await _orderRepository.GetByIdAsync(id);
-            if (order == null) return NotFound(new { message = "Order not found" });
+
+            if (order == null)
+            {
+                return NotFound(new { message = "Không tìm thấy đơn hàng" });
+            }
 
             var details = await _orderDetailRepository.GetByOrderAsync(id);
+
             return Ok(new { order, details });
         }
 
-        // =========================================================================
-        // HÀM CHECKOUT: LƯU HÓA ĐƠN & DỌN SẠCH GIỎ HÀNG
-        // =========================================================================
         [HttpPost("checkout")]
         [AllowAnonymous]
         public async Task<IActionResult> Checkout([FromBody] CheckoutDto dto)
         {
-            var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? dto.UserId;
-            if (string.IsNullOrEmpty(userId))
-                return Unauthorized(new { message = "Vui lòng đăng nhập để thanh toán!" });
+            await using var transaction = await _context.Database.BeginTransactionAsync();
 
-            var orderDetails = new List<OrderDetail>();
-
-            // 1. Kiểm tra tồn kho
-            foreach (var item in dto.Details)
-            {
-                var product = await _productRepository.GetByIdAsync(item.ProductId);
-                if (product == null)
-                    return BadRequest(new { message = $"Sản phẩm ID {item.ProductId} không tồn tại" });
-
-                if (product.Stock < item.Quantity)
-                    return BadRequest(new { message = $"Sản phẩm {product.Name} không đủ số lượng trong kho" });
-
-                orderDetails.Add(new OrderDetail
-                {
-                    ProductId = item.ProductId,
-                    Quantity = item.Quantity,
-                    UnitPrice = item.UnitPrice
-                });
-
-                // Trừ kho
-                product.Stock -= item.Quantity;
-                await _productRepository.UpdateAsync(product);
-            }
-
-            // 2. Tạo Hóa đơn
-            var order = new Order
-            {
-                UserId = userId,
-                OrderDate = DateTime.Now,
-                SubTotal = dto.SubTotal,
-                ShippingFee = dto.ShippingFee,
-                TotalAmount = dto.TotalAmount,
-                Status = "Pending",
-                ShippingAddress = dto.ShippingAddress ?? "",
-                PaymentMethod = dto.PaymentMethod ?? "Cash On Delivery",
-                OrderNotes = dto.OrderNotes,
-                CouponCode = dto.CouponCode
-            };
-
-            await _orderRepository.AddAsync(order);
-
-            // 3. Lưu chi tiết hóa đơn
-            foreach (var detail in orderDetails)
-            {
-                detail.OrderId = order.Id;
-                await _orderDetailRepository.AddAsync(detail);
-            }
-
-            // =======================================================
-            // 4. BỘ MÁY DỌN DẸP GIỎ HÀNG (MỚI THÊM VÀO ĐÂY NÈ NÍ!!!)
-            // =======================================================
             try
             {
-                // Tìm giỏ hàng của ông khách này
+                if (dto == null)
+                {
+                    return BadRequest("Dữ liệu đặt hàng bị rỗng!");
+                }
+
+                if (dto.Details == null || dto.Details.Count == 0)
+                {
+                    return BadRequest("Giỏ hàng đang trống, không thể đặt hàng!");
+                }
+
+                var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? dto.UserId;
+
+                if (string.IsNullOrWhiteSpace(userId))
+                {
+                    return Unauthorized(new { message = "Vui lòng đăng nhập để thanh toán!" });
+                }
+
+                var userExists = await _context.Users.AnyAsync(u => u.Id == userId);
+
+                if (!userExists)
+                {
+                    return BadRequest("Tài khoản đặt hàng không tồn tại trong hệ thống!");
+                }
+
+                var cleanCouponCode = string.IsNullOrWhiteSpace(dto.CouponCode)
+                    ? null
+                    : dto.CouponCode.Trim().ToUpper();
+
+                if (cleanCouponCode != null)
+                {
+                    var coupon = await _context.Coupons
+                        .FirstOrDefaultAsync(c => c.Code == cleanCouponCode);
+
+                    if (coupon == null)
+                    {
+                        return BadRequest("Mã giảm giá không tồn tại!");
+                    }
+
+                    if (!coupon.IsActive)
+                    {
+                        return BadRequest("Mã giảm giá này đã bị khóa!");
+                    }
+
+                    if (coupon.ExpiryDate < DateTime.Now)
+                    {
+                        return BadRequest("Mã giảm giá này đã hết hạn!");
+                    }
+                }
+
+                var orderDetails = new List<OrderDetail>();
+
+                foreach (var item in dto.Details)
+                {
+                    if (item.Quantity <= 0)
+                    {
+                        return BadRequest("Số lượng sản phẩm không hợp lệ!");
+                    }
+
+                    var product = await _context.Products.FindAsync(item.ProductId);
+
+                    if (product == null)
+                    {
+                        return BadRequest($"Sản phẩm ID {item.ProductId} không tồn tại!");
+                    }
+
+                    if (product.Stock < item.Quantity)
+                    {
+                        return BadRequest($"Sản phẩm {product.Name} không đủ số lượng trong kho!");
+                    }
+
+                    orderDetails.Add(new OrderDetail
+                    {
+                        ProductId = item.ProductId,
+                        Quantity = item.Quantity,
+                        UnitPrice = item.UnitPrice
+                    });
+
+                    product.Stock -= item.Quantity;
+                }
+                var order = new Order
+                {
+                    UserId = userId,
+                    OrderDate = DateTime.Now,
+                    SubTotal = dto.SubTotal,
+                    ShippingFee = dto.ShippingFee,
+                    TotalAmount = dto.TotalAmount,
+                    Status = "Pending",
+                    ReceiverName = dto.ReceiverName,
+                    ShippingAddress = dto.ShippingAddress ?? "",
+                    Phone = dto.Phone,
+                    PaymentMethod = dto.PaymentMethod ?? "Cash On Delivery",
+                    OrderNotes = dto.OrderNotes,
+                    CouponCode = string.IsNullOrWhiteSpace(dto.CouponCode) ? null : dto.CouponCode.Trim().ToUpper()
+                };
+
+                _context.Orders.Add(order);
+                await _context.SaveChangesAsync();
+
+                foreach (var detail in orderDetails)
+                {
+                    detail.OrderId = order.Id;
+                    _context.OrderDetails.Add(detail);
+                }
+
+                await _context.SaveChangesAsync();
+
                 var cart = await _context.Carts.FirstOrDefaultAsync(c => c.UserId == userId);
+
                 if (cart != null)
                 {
-                    // Lôi hết đồ trong giỏ ra
-                    var cartItems = await _context.CartItems.Where(i => i.CartId == cart.Id).ToListAsync();
+                    var cartItems = await _context.CartItems
+                        .Where(i => i.CartId == cart.Id)
+                        .ToListAsync();
+
                     if (cartItems.Any())
                     {
-                        // Đem đi vứt sọt rác
                         _context.CartItems.RemoveRange(cartItems);
                         await _context.SaveChangesAsync();
                     }
                 }
+
+                await transaction.CommitAsync();
+
+                return Ok(new
+                {
+                    message = "Lưu hóa đơn và dọn giỏ hàng thành công! 🎉",
+                    orderId = order.Id
+                });
             }
             catch (Exception ex)
             {
-                Console.WriteLine("Lỗi khi xóa giỏ hàng: " + ex.Message);
-                // Dù xóa giỏ hàng lỗi thì vẫn báo đặt hàng thành công nha
-            }
+                await transaction.RollbackAsync();
 
-            return Ok(new { message = "Lưu hóa đơn và dọn giỏ hàng thành công! 🎉", orderId = order.Id });
+                var errorMsg = ex.InnerException != null
+                    ? ex.InnerException.Message
+                    : ex.Message;
+
+                return StatusCode(500, $"Lỗi Server C#: {errorMsg}");
+            }
         }
 
-
-        // (Giữ nguyên hàm Create cũ)
         [HttpPost]
         public async Task<IActionResult> Create([FromBody] CreateOrderDto dto)
         {
             var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-            if (string.IsNullOrEmpty(userId)) return Unauthorized();
+
+            if (string.IsNullOrEmpty(userId))
+            {
+                return Unauthorized();
+            }
 
             decimal totalAmount = 0;
             var orderDetails = new List<OrderDetail>();
@@ -230,10 +325,19 @@ namespace BaseCore.APIService.Controllers
             foreach (var item in dto.Items)
             {
                 var product = await _productRepository.GetByIdAsync(item.ProductId);
-                if (product == null) return BadRequest(new { message = $"Product {item.ProductId} not found" });
-                if (product.Stock < item.Quantity) return BadRequest(new { message = $"Insufficient stock for {product.Name}" });
+
+                if (product == null)
+                {
+                    return BadRequest(new { message = $"Product {item.ProductId} not found" });
+                }
+
+                if (product.Stock < item.Quantity)
+                {
+                    return BadRequest(new { message = $"Insufficient stock for {product.Name}" });
+                }
 
                 totalAmount += product.Price * item.Quantity;
+
                 orderDetails.Add(new OrderDetail
                 {
                     ProductId = item.ProductId,
@@ -249,9 +353,13 @@ namespace BaseCore.APIService.Controllers
             {
                 UserId = userId,
                 OrderDate = DateTime.Now,
+                SubTotal = totalAmount,
+                ShippingFee = 0,
                 TotalAmount = totalAmount,
                 Status = "Pending",
-                ShippingAddress = dto.ShippingAddress ?? ""
+                ShippingAddress = dto.ShippingAddress ?? "",
+                PaymentMethod = "Cash On Delivery",
+                CouponCode = null
             };
 
             await _orderRepository.AddAsync(order);
@@ -262,27 +370,34 @@ namespace BaseCore.APIService.Controllers
                 await _orderDetailRepository.AddAsync(detail);
             }
 
-            return CreatedAtAction(nameof(GetById), new { id = order.Id }, new { order, details = orderDetails });
+            return CreatedAtAction(
+                nameof(GetById),
+                new { id = order.Id },
+                new { order, details = orderDetails }
+            );
         }
 
         [HttpPut("{id}/status")]
         public async Task<IActionResult> UpdateStatus(int id, [FromBody] StatusUpdateDto dto)
         {
             var order = await _context.Orders.FindAsync(id);
-            if (order == null) return NotFound();
 
-            // KIỂM TRA: Nếu trạng thái hiện tại là 'Đã hủy' hoặc 'Hoàn thành' thì cấm sửa
-            if (order.Status == "Canceled" || order.Status == "Completed")
+            if (order == null)
+            {
+                return NotFound();
+            }
+
+            if (order.Status == "Cancelled" || order.Status == "Completed")
             {
                 return BadRequest("Đơn hàng đã đóng (Hủy/Hoàn thành), không thể thay đổi trạng thái nữa ní ơi!");
             }
 
-            // Chỉ cho phép cập nhật nếu đơn hàng vẫn đang trong luồng xử lý
             order.Status = dto.Status;
 
             try
             {
                 await _context.SaveChangesAsync();
+
                 return Ok(new { message = "Cập nhật thành công" });
             }
             catch (Exception ex)
@@ -291,70 +406,89 @@ namespace BaseCore.APIService.Controllers
             }
         }
 
-        // Khai báo thêm Class này ở cuối file Controller hoặc file DTO
-        public class StatusUpdateDto
-        {
-            public string Status { get; set; } = null!;
-        }
-
         [HttpPut("{id}/cancel")]
-        public async Task<IActionResult> CancelOrder(int id)
+        [AllowAnonymous]
+        public async Task<IActionResult> CancelOrder(int id, [FromBody] CancelOrderDto dto)
         {
-            var order = await _orderRepository.GetByIdAsync(id);
-            if (order == null) return NotFound(new { message = "Order not found" });
-
-            if (order.Status == "Completed")
-                return BadRequest(new { message = "Cannot cancel completed order" });
-
-            var details = await _orderDetailRepository.GetByOrderAsync(id);
-            foreach (var detail in details)
+            try
             {
-                var product = await _productRepository.GetByIdAsync(detail.ProductId);
-                if (product != null)
+                var order = await _context.Orders.FindAsync(id);
+
+                if (order == null)
                 {
-                    product.Stock += detail.Quantity;
-                    await _productRepository.UpdateAsync(product);
+                    return NotFound("Không tìm thấy đơn hàng!");
                 }
+
+                if (order.Status != "Pending")
+                {
+                    return BadRequest("Chỉ có thể hủy đơn hàng khi đơn đang chờ xử lý!");
+                }
+
+                if (string.IsNullOrWhiteSpace(dto.Reason))
+                {
+                    return BadRequest("Vui lòng chọn lý do hủy đơn!");
+                }
+
+                var details = await _context.OrderDetails
+                    .Where(d => d.OrderId == id)
+                    .ToListAsync();
+
+                foreach (var detail in details)
+                {
+                    var product = await _context.Products.FindAsync(detail.ProductId);
+
+                    if (product != null)
+                    {
+                        product.Stock += detail.Quantity;
+                    }
+                }
+
+                order.Status = "Cancelled";
+                order.CancelReason = dto.Reason.Trim();
+                order.CancelledAt = DateTime.Now;
+
+                await _context.SaveChangesAsync();
+
+                return Ok(new
+                {
+                    message = "Hủy đơn hàng thành công!",
+                    order
+                });
             }
-
-            order.Status = "Cancelled";
-            await _orderRepository.UpdateAsync(order);
-
-            return Ok(new { message = "Order cancelled successfully", order });
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"Lỗi hủy đơn hàng: {ex.Message}");
+            }
         }
-
-        // =========================================================================
-        // HÀM XÓA ĐƠN HÀNG: XÓA CHI TIẾT TRƯỚC, XÓA ĐƠN SAU
-        // =========================================================================
         [HttpDelete("{id}")]
         public async Task<IActionResult> DeleteOrder(int id)
         {
             try
             {
-                // 1. Tìm đơn hàng xem có tồn tại không
                 var order = await _context.Orders.FindAsync(id);
-                if (order == null) return NotFound(new { message = "Không tìm thấy đơn hàng để xóa!" });
 
-                // 2. Tìm tất cả các chi tiết liên quan đến đơn hàng này
-                var details = await _context.OrderDetails.Where(d => d.OrderId == id).ToListAsync();
+                if (order == null)
+                {
+                    return NotFound(new { message = "Không tìm thấy đơn hàng để xóa!" });
+                }
 
-                // 3. Xóa các chi tiết trước để không bị lỗi khóa ngoại (Foreign Key)
+                var details = await _context.OrderDetails
+                    .Where(d => d.OrderId == id)
+                    .ToListAsync();
+
                 if (details.Any())
                 {
                     _context.OrderDetails.RemoveRange(details);
                 }
 
-                // 4. Bây giờ mới xóa đơn hàng chính
                 _context.Orders.Remove(order);
 
-                // 5. Lưu thay đổi vào Database
                 await _context.SaveChangesAsync();
 
                 return Ok(new { message = "Đã xóa vĩnh viễn đơn hàng và các chi tiết liên quan! 🗑️" });
             }
             catch (Exception ex)
             {
-                // Nếu có lỗi gì phát sinh (ví dụ lỗi DB) thì báo về cho React
                 return StatusCode(500, $"Lỗi server khi xóa: {ex.Message}");
             }
         }
@@ -363,27 +497,125 @@ namespace BaseCore.APIService.Controllers
         [AllowAnonymous]
         public async Task<IActionResult> FilterProducts(string? name, DateTime? startDate)
         {
-            // Lọc theo Tên và Ngày theo yêu cầu của thầy
             var query = _context.Products.AsNoTracking().AsQueryable();
 
-            if (!string.IsNullOrEmpty(name))
+            if (!string.IsNullOrWhiteSpace(name))
             {
                 query = query.Where(p => p.Name.Contains(name));
             }
 
-            if (startDate.HasValue)
-            {
-                // Giả sử ní lọc theo ngày tạo (CreatedDate), nếu không có thì bỏ qua phần này
-                // query = query.Where(p => p.CreatedDate >= startDate.Value);
-            }
-
             return Ok(await query.ToListAsync());
         }
-    }
 
-    // =========================================================================
-    // CÁC DTO (Data Transfer Objects)
-    // =========================================================================
+        public class StatusUpdateDto
+        {
+            public string Status { get; set; } = null!;
+        }
+        [HttpPut("{id}/pending-update")]
+        [AllowAnonymous]
+        public async Task<IActionResult> UpdatePendingOrder(int id, [FromBody] UpdatePendingOrderDto dto)
+        {
+            await using var transaction = await _context.Database.BeginTransactionAsync();
+
+            try
+            {
+                var order = await _context.Orders.FindAsync(id);
+
+                if (order == null)
+                {
+                    return NotFound("Không tìm thấy đơn hàng!");
+                }
+
+                if (order.Status != "Pending")
+                {
+                    return BadRequest("Chỉ có thể cập nhật đơn hàng khi đơn đang chờ xử lý!");
+                }
+
+                if (string.IsNullOrWhiteSpace(dto.ReceiverName))
+                {
+                    return BadRequest("Vui lòng nhập tên người nhận!");
+                }
+
+                if (string.IsNullOrWhiteSpace(dto.Phone))
+                {
+                    return BadRequest("Vui lòng nhập số điện thoại!");
+                }
+
+                if (string.IsNullOrWhiteSpace(dto.ShippingAddress))
+                {
+                    return BadRequest("Vui lòng nhập địa chỉ giao hàng!");
+                }
+
+                var oldDetails = await _context.OrderDetails
+                    .Where(d => d.OrderId == id)
+                    .ToListAsync();
+
+                foreach (var oldDetail in oldDetails)
+                {
+                    var product = await _context.Products.FindAsync(oldDetail.ProductId);
+
+                    if (product != null)
+                    {
+                        product.Stock += oldDetail.Quantity;
+                    }
+                }
+
+                decimal newSubTotal = 0;
+
+                foreach (var item in dto.Details)
+                {
+                    if (item.Quantity <= 0)
+                    {
+                        return BadRequest("Số lượng sản phẩm phải lớn hơn 0!");
+                    }
+
+                    var product = await _context.Products.FindAsync(item.ProductId);
+
+                    if (product == null)
+                    {
+                        return BadRequest($"Sản phẩm ID {item.ProductId} không tồn tại!");
+                    }
+
+                    if (product.Stock < item.Quantity)
+                    {
+                        return BadRequest($"Sản phẩm {product.Name} không đủ số lượng trong kho!");
+                    }
+
+                    var detail = oldDetails.FirstOrDefault(d => d.ProductId == item.ProductId);
+
+                    if (detail != null)
+                    {
+                        detail.Quantity = item.Quantity;
+                        detail.UnitPrice = item.UnitPrice;
+                    }
+
+                    product.Stock -= item.Quantity;
+                    newSubTotal += item.UnitPrice * item.Quantity;
+                }
+
+                order.ReceiverName = dto.ReceiverName.Trim();
+                order.Phone = dto.Phone.Trim();
+                order.ShippingAddress = dto.ShippingAddress.Trim();
+                order.OrderNotes = dto.OrderNotes;
+                order.SubTotal = newSubTotal;
+                order.TotalAmount = newSubTotal + order.ShippingFee;
+
+                await _context.SaveChangesAsync();
+                await transaction.CommitAsync();
+
+                return Ok(new
+                {
+                    message = "Cập nhật đơn hàng thành công!",
+                    order
+                });
+            }
+            catch (Exception ex)
+            {
+                await transaction.RollbackAsync();
+                return StatusCode(500, $"Lỗi cập nhật đơn hàng: {ex.Message}");
+            }
+        }
+    }
 
     public class CreateOrderDto
     {
@@ -402,19 +634,22 @@ namespace BaseCore.APIService.Controllers
         public string Status { get; set; } = "";
     }
 
-    // DTO hứng dữ liệu thanh toán từ React
     public class CheckoutDto
     {
-        public string UserId { get; set; }
-        public string ShippingAddress { get; set; }
-        public string Phone { get; set; }
-        public string OrderNotes { get; set; }
-        public string PaymentMethod { get; set; }
+        public string? UserId { get; set; }
+        public string? ShippingAddress { get; set; }
+        public string? Phone { get; set; }
+        public string? OrderNotes { get; set; }
+        public string? PaymentMethod { get; set; }
         public decimal SubTotal { get; set; }
         public decimal ShippingFee { get; set; }
         public decimal DiscountAmount { get; set; }
         public decimal TotalAmount { get; set; }
-        public string CouponCode { get; set; }
+
+        // Quan trọng: nullable để không nhập mã giảm giá vẫn đặt hàng được
+        public string? CouponCode { get; set; }
+        public string? ReceiverName { get; set; }
+
         public List<CheckoutDetailDto> Details { get; set; } = new();
     }
 
@@ -424,4 +659,22 @@ namespace BaseCore.APIService.Controllers
         public int Quantity { get; set; }
         public decimal UnitPrice { get; set; }
     }
+}
+public class CancelOrderDto
+{
+    public string? Reason { get; set; }
+}
+public class UpdatePendingOrderDto
+{
+    public string? ReceiverName { get; set; }
+    public string? Phone { get; set; }
+    public string? ShippingAddress { get; set; }
+    public string? OrderNotes { get; set; }
+    public List<UpdatePendingOrderDetailDto> Details { get; set; } = new();
+}
+public class UpdatePendingOrderDetailDto
+{
+    public int ProductId { get; set; }
+    public int Quantity { get; set; }
+    public decimal UnitPrice { get; set; }
 }

@@ -20,4 +20,7 @@ public partial class ProductReview
     public DateTime ReviewDate { get; set; }
 
     public virtual Product Product { get; set; } = null!;
+    // Thêm 2 dòng này vào class ProductReview
+    public int? OrderId { get; set; }
+    public string? ImageUrl { get; set; }
 }
