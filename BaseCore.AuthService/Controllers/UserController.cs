@@ -1,5 +1,6 @@
 ﻿//UserCTL
 using Microsoft.AspNetCore.Authorization;
+using BaseCore.DTO.AuthService;
 using Microsoft.AspNetCore.Mvc;
 using BaseCore.Entities;
 using BaseCore.Services.Authen;
@@ -160,41 +161,4 @@ namespace BaseCore.AuthService.Controllers
         }
     }
 
-    // --- KHÔI PHỤC CÁC DTO ---
-    public class UserResponse
-    {
-        public string Id { get; set; }
-        public string Username { get; set; }
-        public string Name { get; set; }
-        public string Email { get; set; }
-        public string Phone { get; set; }
-        public string Position { get; set; } // KHÔI PHỤC
-        public bool IsActive { get; set; } // KHÔI PHỤC
-        public int UserType { get; set; }
-        public DateTime Created { get; set; }
-    }
-
-    public class CreateUserRequest
-    {
-        public string Username { get; set; }
-        public string Password { get; set; }
-        public string Name { get; set; }
-        public string Email { get; set; }
-        public string Phone { get; set; }
-        public string Position { get; set; } // KHÔI PHỤC
-        public bool IsActive { get; set; } // KHÔI PHỤC
-        public int UserType { get; set; }
-    }
-
-    public class UpdateUserRequest
-    {
-        // 🌟 Gắn thêm dấu ? vào đây để cho phép để trống Password
-        public string? Password { get; set; }
-        public string? Name { get; set; }
-        public string? Email { get; set; }
-        public string? Phone { get; set; }
-        public string? Position { get; set; }
-        public int? UserType { get; set; }
-        public bool? IsActive { get; set; }
-    }
 }

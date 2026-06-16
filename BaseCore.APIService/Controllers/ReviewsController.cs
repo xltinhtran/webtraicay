@@ -1,3 +1,4 @@
+using BaseCore.DTO.Reviews;
 using BaseCore.Entities;
 using BaseCore.Services;
 using Microsoft.AspNetCore.Authorization;
@@ -101,16 +102,5 @@ namespace BaseCore.APIService.Controllers
             var summary = await _reviewService.GetSummaryAsync();
             return Ok(summary);
         }
-    }
-
-    public class SubmitReviewDto
-    {
-        public int OrderId { get; set; }
-        public int ProductId { get; set; }
-        public string? UserId { get; set; }
-        public string? UserName { get; set; }
-        public int Rating { get; set; }
-        public string? Comment { get; set; }
-        public IFormFile? ImageFile { get; set; }
     }
 }

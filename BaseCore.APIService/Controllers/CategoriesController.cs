@@ -1,3 +1,4 @@
+using BaseCore.DTO.Categories;
 using BaseCore.Entities;
 using BaseCore.Services;
 using Microsoft.AspNetCore.Authorization;
@@ -84,11 +85,5 @@ namespace BaseCore.APIService.Controllers
             await _categoryService.DeleteAsync(category);
             return Ok(new { message = "Category deleted successfully" });
         }
-    }
-
-    public class CategoryDto
-    {
-        public string Name { get; set; } = "";
-        public string? Description { get; set; }
     }
 }

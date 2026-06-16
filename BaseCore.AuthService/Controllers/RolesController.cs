@@ -1,3 +1,4 @@
+using BaseCore.DTO.AuthService;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using System.Collections.Generic;
@@ -81,13 +82,5 @@ namespace BaseCore.AuthService.Controllers
                 permissions
             });
         }
-    }
-
-    public class RoleDto
-    {
-        public int Id { get; set; }
-        public string Name { get; set; } = "";
-        public string Description { get; set; } = "";
-        public int UserType { get; set; }
     }
 }

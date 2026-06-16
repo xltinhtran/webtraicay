@@ -1,3 +1,4 @@
+using BaseCore.DTO.Carts;
 using BaseCore.Services;
 using Microsoft.AspNetCore.Mvc;
 
@@ -54,10 +55,4 @@ namespace BaseCore.APIService.Controllers
         }
     }
 
-    public class AddToCartRequest
-    {
-        public string UserId { get; set; } = "";
-        public int ProductId { get; set; }
-        public int Quantity { get; set; }
-    }
 }
