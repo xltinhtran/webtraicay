@@ -1,3 +1,4 @@
+using BaseCore.DTO.Orders;
 using BaseCore.Entities;
 using BaseCore.Services;
 using Microsoft.AspNetCore.Authorization;
@@ -295,70 +296,5 @@ namespace BaseCore.APIService.Controllers
             }
         }
 
-        public class StatusUpdateDto
-        {
-            public string Status { get; set; } = "";
-        }
     }
-
-    public class CreateOrderDto
-    {
-        public List<OrderItemDto> Items { get; set; } = new();
-        public string? ShippingAddress { get; set; }
-    }
-
-    public class OrderItemDto
-    {
-        public int ProductId { get; set; }
-        public int Quantity { get; set; }
-    }
-
-    public class UpdateStatusDto
-    {
-        public string Status { get; set; } = "";
-    }
-
-    public class CheckoutDto
-    {
-        public string? UserId { get; set; }
-        public string? ShippingAddress { get; set; }
-        public string? Phone { get; set; }
-        public string? OrderNotes { get; set; }
-        public string? PaymentMethod { get; set; }
-        public decimal SubTotal { get; set; }
-        public decimal ShippingFee { get; set; }
-        public decimal DiscountAmount { get; set; }
-        public decimal TotalAmount { get; set; }
-        public string? CouponCode { get; set; }
-        public string? ReceiverName { get; set; }
-        public List<CheckoutDetailDto> Details { get; set; } = new();
-    }
-
-    public class CheckoutDetailDto
-    {
-        public int ProductId { get; set; }
-        public int Quantity { get; set; }
-        public decimal UnitPrice { get; set; }
-    }
-}
-
-public class CancelOrderDto
-{
-    public string? Reason { get; set; }
-}
-
-public class UpdatePendingOrderDto
-{
-    public string? ReceiverName { get; set; }
-    public string? Phone { get; set; }
-    public string? ShippingAddress { get; set; }
-    public string? OrderNotes { get; set; }
-    public List<UpdatePendingOrderDetailDto> Details { get; set; } = new();
-}
-
-public class UpdatePendingOrderDetailDto
-{
-    public int ProductId { get; set; }
-    public int Quantity { get; set; }
-    public decimal UnitPrice { get; set; }
 }
