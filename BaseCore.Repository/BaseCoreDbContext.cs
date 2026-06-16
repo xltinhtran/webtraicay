@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using Microsoft.EntityFrameworkCore;
 using BaseCore.Entities; // <--- CHÌA KHÓA DIỆT 63 LỖI NẰM Ở ĐÂY NÈ NÍ!
@@ -34,7 +34,7 @@ public partial class BaseCoreDbContext : DbContext
     public DbSet<Coupon> Coupons { get; set; }
     protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
 #warning To protect potentially sensitive information in your connection string, you should move it out of source code. You can avoid scaffolding the connection string by using the Name= syntax to read it from configuration - see https://go.microsoft.com/fwlink/?linkid=2131148. For more guidance on storing connection strings, see https://go.microsoft.com/fwlink/?LinkId=723263.
-        => optionsBuilder.UseSqlServer("Data Source=LAPTOP-Q4MLP930\\SQLEXPRESS;Initial Catalog=BaseCoreSales;Integrated Security=True;TrustServerCertificate=True;MultipleActiveResultSets=True");
+        => optionsBuilder.UseSqlServer("Data Source=LAPTOP-Q4MLP930\\SQLEXPRESS;Initial Catalog=BaseCoreSales;Integrated Security=True;Encrypt=True;Trust Server Certificate=True;MultipleActiveResultSets=True");
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -44,6 +44,21 @@ public partial class BaseCoreDbContext : DbContext
 
             entity.Property(e => e.Description).HasMaxLength(500);
             entity.Property(e => e.Name).HasMaxLength(100);
+        });
+
+        modelBuilder.Entity<Coupon>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => e.Code).IsUnique();
+
+            entity.Property(e => e.Code).HasMaxLength(50);
+            entity.Property(e => e.CouponType)
+                .HasMaxLength(20)
+                .HasDefaultValue("Public");
+            entity.Property(e => e.UserId).HasMaxLength(450);
+            entity.Property(e => e.MinOrderAmount).HasColumnType("decimal(18, 2)");
+            entity.Property(e => e.UsedCount).HasDefaultValue(0);
+            entity.Property(e => e.IsActive).HasDefaultValue(true);
         });
 
         modelBuilder.Entity<Order>(entity =>
@@ -98,7 +113,15 @@ public partial class BaseCoreDbContext : DbContext
             entity.Property(e => e.Quality)
                 .HasMaxLength(50)
                 .HasDefaultValue("Organic");
-            entity.Property(e => e.Stock).HasDefaultValue(100);
+            entity.Property(e => e.LowStockThreshold)
+                .HasColumnType("decimal(18, 2)")
+                .HasDefaultValue(10m);
+            entity.Property(e => e.Stock)
+                .HasColumnType("decimal(18, 2)")
+                .HasDefaultValue(100m);
+            entity.Property(e => e.Unit)
+                .HasMaxLength(20)
+                .HasDefaultValue("sản phẩm");
             entity.Property(e => e.Weight)
                 .HasMaxLength(50)
                 .HasDefaultValue("1 kg");

@@ -19,7 +19,7 @@ namespace BaseCore.Services.Authen
         Task<User> Create(User user, string password);
         Task Update(User user, string password = null);
         Task Delete(string id);
-        Task<(List<User> Users, int TotalCount)> Search(string keyword, int page, int pageSize);
+        Task<(List<User> Users, int TotalCount)> Search(string keyword, string? role, string? status, int page, int pageSize);
     }
 
     // --- 2. LỚP TRIỂN KHAI LOGIC ---
@@ -95,9 +95,9 @@ namespace BaseCore.Services.Authen
             await _userRepository.DeleteAsync(id);
         }
 
-        public async Task<(List<User> Users, int TotalCount)> Search(string keyword, int page, int pageSize)
+        public async Task<(List<User> Users, int TotalCount)> Search(string keyword, string? role, string? status, int page, int pageSize)
         {
-            return await _userRepository.SearchAsync(keyword, page, pageSize);
+            return await _userRepository.SearchAsync(keyword, role, status, page, pageSize);
         }
     }
 }

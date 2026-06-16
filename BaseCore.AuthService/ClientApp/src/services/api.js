@@ -5,11 +5,11 @@ import axios from 'axios';
 const AUTH_BASE_URL = 'http://localhost:5000/api';
 
 // APIService: products, categories, carts, orders, coupons, reviews
-const API_SERVICE_BASE_URL = 'http://localhost:5001/api';
+const API_SERVICE_BASE_URL = 'http://localhost:5000/api';
 
 // Dùng để hiển thị ảnh review / ảnh upload từ APIService
 export const API_STATIC_BASE_URL = 'http://localhost:5001';
-
+                  
 // ===============================
 // AXIOS CLIENTS
 // ===============================
@@ -123,6 +123,30 @@ export const productsApi = {
     update: (id, data) =>
         apiClient.put(`/products/${id}`, data),
 
+    uploadImage: (formData) =>
+        apiClient.post('/products/upload-image', formData, {
+            headers: {
+                'Content-Type': 'multipart/form-data'
+            }
+        }),
+
+    getImages: (id) =>
+        apiClient.get(`/products/${id}/images`),
+
+    uploadImages: (id, formData) =>
+        apiClient.post(`/products/${id}/images`, formData, {
+            headers: {
+                'Content-Type': 'multipart/form-data'
+            }
+        }),
+
+    deleteImage: (id, imageUrl) =>
+        apiClient.delete(`/products/${id}/images`, {
+            params: {
+                imageUrl
+            }
+        }),
+
     delete: (id) =>
         apiClient.delete(`/products/${id}`),
 
@@ -141,8 +165,8 @@ export const productsApi = {
 // ===============================
 
 export const categoriesApi = {
-    getAll: () =>
-        apiClient.get('/categories'),
+    getAll: (params) =>
+        apiClient.get('/categories', { params }),
 
     getById: (id) =>
         apiClient.get(`/categories/${id}`),
@@ -203,10 +227,30 @@ export const cartsApi = {
 // ===============================
 
 export const couponsApi = {
-    check: (code) =>
+    getAll: (params) =>
+        apiClient.get('/coupons', { params }),
+
+    getAvailable: (params) =>
+        apiClient.get('/coupons/available', { params }),
+
+    getById: (id) =>
+        apiClient.get(`/coupons/${id}`),
+
+    create: (data) =>
+        apiClient.post('/coupons', data),
+
+    update: (id, data) =>
+        apiClient.put(`/coupons/${id}`, data),
+
+    delete: (id) =>
+        apiClient.delete(`/coupons/${id}`),
+
+    check: (code, userId, subtotal) =>
         apiClient.get('/coupons/check', {
             params: {
-                code
+                code,
+                userId,
+                subtotal
             }
         })
 };

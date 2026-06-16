@@ -23,9 +23,14 @@ namespace BaseCore.AuthService.Controllers
 
         [HttpGet]
         [Authorize(Roles = "Admin")]
-        public async Task<IActionResult> GetAll([FromQuery] string keyword = "", [FromQuery] int page = 1, [FromQuery] int pageSize = 10)
+        public async Task<IActionResult> GetAll(
+            [FromQuery] string keyword = "",
+            [FromQuery] string? role = null,
+            [FromQuery] string? status = null,
+            [FromQuery] int page = 1,
+            [FromQuery] int pageSize = 10)
         {
-            var (users, totalCount) = await _userService.Search(keyword, page, pageSize);
+            var (users, totalCount) = await _userService.Search(keyword, role, status, page, pageSize);
 
             var result = users.Select(u => new UserResponse
             {

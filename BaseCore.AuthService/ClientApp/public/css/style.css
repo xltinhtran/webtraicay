@@ -452,7 +452,7 @@
 
 
 /*** Single Page Start ***/
-.pagination {
+.pagination:not(ul) {
     display: inline-block;
 }
   

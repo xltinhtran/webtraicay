@@ -2,11 +2,12 @@
 import { Link, useNavigate } from 'react-router-dom';
 import { cartsApi } from '../services/api';
 
+const getProductUnit = (product) => product?.unit || product?.Unit || 'sản phẩm';
+
 const Cart = () => {
     const navigate = useNavigate();
 
     const [cart, setCart] = useState([]);
-    const [heroSearch, setHeroSearch] = useState('');
 
     useEffect(() => {
         const userData = JSON.parse(localStorage.getItem('user') || '{}');
@@ -20,17 +21,6 @@ const Cart = () => {
             setCart([]);
         }
     }, []);
-
-    const handleHeroSearch = () => {
-        const closeBtn = document.getElementById('close-search-modal');
-        if (closeBtn) closeBtn.click();
-
-        navigate('/shop', {
-            state: {
-                searchTerm: heroSearch
-            }
-        });
-    };
 
     const handleQuantityChange = (itemId, change) => {
         setCart(cart.map(item => {
@@ -174,13 +164,13 @@ const Cart = () => {
                             </div>
 
                             <div className="d-flex m-3 me-0">
-                                <button
+                                <Link
+                                    to="/shop"
                                     className="btn-search btn border border-secondary btn-md-square rounded-circle bg-white me-4"
-                                    data-bs-toggle="modal"
-                                    data-bs-target="#searchModal"
+                                    aria-label="Đi tới cửa hàng"
                                 >
                                     <i className="fas fa-search text-primary"></i>
-                                </button>
+                                </Link>
 
                                 <Link to="/cart" className="position-relative me-4 my-auto">
                                     <i className="fa fa-shopping-bag fa-2x"></i>
@@ -268,56 +258,6 @@ const Cart = () => {
             </div>
             {/* Navbar End */}
 
-            {/* Modal Search Start */}
-            <div
-                className="modal fade"
-                id="searchModal"
-                tabIndex="-1"
-                aria-labelledby="exampleModalLabel"
-                aria-hidden="true"
-            >
-                <div className="modal-dialog modal-fullscreen">
-                    <div className="modal-content rounded-0">
-                        <div className="modal-header">
-                            <h5 className="modal-title" id="exampleModalLabel">
-                                Tìm kiếm bằng từ khóa
-                            </h5>
-
-                            <button
-                                type="button"
-                                id="close-search-modal"
-                                className="btn-close"
-                                data-bs-dismiss="modal"
-                                aria-label="Đóng"
-                            ></button>
-                        </div>
-
-                        <div className="modal-body d-flex align-items-center">
-                            <div className="input-group w-75 mx-auto d-flex">
-                                <input
-                                    type="search"
-                                    className="form-control p-3"
-                                    placeholder="Nhập từ khóa..."
-                                    value={heroSearch}
-                                    onChange={(e) => setHeroSearch(e.target.value)}
-                                    onKeyDown={(e) => e.key === 'Enter' && handleHeroSearch()}
-                                />
-
-                                <span
-                                    id="search-icon-1"
-                                    className="input-group-text p-3"
-                                    style={{ cursor: 'pointer' }}
-                                    onClick={handleHeroSearch}
-                                >
-                                    <i className="fa fa-search"></i>
-                                </span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            {/* Modal Search End */}
-
             {/* Page Header Start */}
             <div className="container-fluid page-header py-5">
                 <h1 className="text-center text-white display-6">Giỏ hàng</h1>
@@ -397,7 +337,7 @@ const Cart = () => {
 
                                                 <td>
                                                     <p className="mb-0">
-                                                        {priceToUse.toLocaleString('vi-VN')} VNĐ
+                                                        {priceToUse.toLocaleString('vi-VN')} VNĐ / {getProductUnit(item)}
                                                     </p>
                                                 </td>
 
@@ -433,6 +373,9 @@ const Cart = () => {
                                                 <td>
                                                     <p className="mb-0 fw-bold text-danger">
                                                         {(priceToUse * item.quantity).toLocaleString('vi-VN')} VNĐ
+                                                        <small className="d-block text-muted">
+                                                            {item.quantity} {getProductUnit(item)}
+                                                        </small>
                                                     </p>
                                                 </td>
 

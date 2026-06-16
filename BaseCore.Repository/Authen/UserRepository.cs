@@ -16,7 +16,7 @@ namespace BaseCore.Repository
         Task CreateAsync(BaseCore.Entities.User user);
         Task UpdateAsync(BaseCore.Entities.User user);
         Task DeleteAsync(string id);
-        Task<(List<BaseCore.Entities.User> Users, int TotalCount)> SearchAsync(string keyword, int page, int pageSize);
+        Task<(List<BaseCore.Entities.User> Users, int TotalCount)> SearchAsync(string keyword, string? role, string? status, int page, int pageSize);
     }
 
     // 2. Lớp triển khai thực tế cho SQL Server
@@ -76,7 +76,7 @@ namespace BaseCore.Repository
             }
         }
 
-        public async Task<(List<BaseCore.Entities.User> Users, int TotalCount)> SearchAsync(string keyword, int page, int pageSize)
+        public async Task<(List<BaseCore.Entities.User> Users, int TotalCount)> SearchAsync(string keyword, string? role, string? status, int page, int pageSize)
         {
             // Đã xóa điều kiện u.IsActive
             var query = _context.Users.AsQueryable();
@@ -85,10 +85,38 @@ namespace BaseCore.Repository
             {
                 var k = keyword.ToLower();
                 query = query.Where(u =>
-                    u.UserName.ToLower().Contains(k) ||
-                    u.Name.ToLower().Contains(k) ||
-                    u.Email.ToLower().Contains(k) ||
-                    u.Phone.ToLower().Contains(k));
+                    (u.UserName ?? "").ToLower().Contains(k) ||
+                    (u.Name ?? "").ToLower().Contains(k) ||
+                    (u.Email ?? "").ToLower().Contains(k) ||
+                    (u.Phone ?? "").ToLower().Contains(k));
+            }
+
+            if (!string.IsNullOrWhiteSpace(role))
+            {
+                var normalizedRole = role.Trim().ToLower();
+
+                if (normalizedRole == "admin")
+                {
+                    query = query.Where(u => u.UserType == 1 || (u.Position != null && u.Position.ToLower().Contains("admin")));
+                }
+                else if (normalizedRole == "customer")
+                {
+                    query = query.Where(u => u.UserType == 0 || (u.Position != null && u.Position.ToLower().Contains("customer")));
+                }
+            }
+
+            if (!string.IsNullOrWhiteSpace(status))
+            {
+                var normalizedStatus = status.Trim().ToLower();
+
+                if (normalizedStatus == "active")
+                {
+                    query = query.Where(u => u.IsActive);
+                }
+                else if (normalizedStatus == "inactive")
+                {
+                    query = query.Where(u => !u.IsActive);
+                }
             }
 
             var totalCount = await query.CountAsync();

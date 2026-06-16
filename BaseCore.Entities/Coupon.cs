@@ -8,5 +8,10 @@ namespace BaseCore.Entities // Đổi lại thành namespace của ní nếu kh�
         public int DiscountPercent { get; set; }
         public DateTime ExpiryDate { get; set; }
         public bool IsActive { get; set; }
+        public string CouponType { get; set; } = "Public";
+        public string? UserId { get; set; }
+        public decimal? MinOrderAmount { get; set; }
+        public int? UsageLimit { get; set; }
+        public int UsedCount { get; set; }
     }
 }

@@ -15,7 +15,11 @@ public partial class Product
 
     public decimal? DiscountPrice { get; set; }
 
-    public int Stock { get; set; }
+    public decimal Stock { get; set; }
+
+    public string Unit { get; set; } = "sản phẩm";
+
+    public decimal LowStockThreshold { get; set; } = 10;
 
     public string Weight { get; set; } = null!;
 

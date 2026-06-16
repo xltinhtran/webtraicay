@@ -1,85 +1,55 @@
-﻿using Microsoft.EntityFrameworkCore;
 using BaseCore.Entities;
-using BaseCore.Repository;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
+using BaseCore.Repository.EFCore;
 
 namespace BaseCore.Services
 {
     public class ProductService : IProductService
     {
-        private readonly BaseCoreDbContext _context;
+        private readonly IProductRepositoryEF _productRepository;
 
-        public ProductService(BaseCoreDbContext context)
+        public ProductService(IProductRepositoryEF productRepository)
         {
-            _context = context;
+            _productRepository = productRepository;
         }
 
-        public async Task<List<Product>> GetAllProductsAsync()
+        public Task<(List<Product> Products, int TotalCount)> SearchAsync(string? keyword, int? categoryId, decimal? minPrice, decimal? maxPrice, string? quality, string? stockStatus, int page, int pageSize)
         {
-            // Dùng Include để load Category luôn, không cần chạy vòng lặp foreach nữa
-            return await _context.Products
-                .Include(p => p.Category)
-                .ToListAsync();
+            return _productRepository.SearchAsync(keyword, categoryId, minPrice, maxPrice, quality, stockStatus, page, pageSize);
         }
 
-        public async Task<Product?> GetProductByIdAsync(int id)
+        public Task<Product?> GetByIdAsync(int id)
         {
-            return await _context.Products
-                .Include(p => p.Category)
-                .FirstOrDefaultAsync(p => p.Id == id);
+            return _productRepository.GetByIdAsync(id);
         }
 
-        public async Task<Product> CreateProductAsync(Product product)
+        public Task<Product> CreateAsync(Product product)
         {
-            // SQL Server tự sinh ID (Identity), không cần lấy MaxId thủ công
-            await _context.Products.AddAsync(product);
-            await _context.SaveChangesAsync();
-            return product;
+            return _productRepository.AddAsync(product);
         }
 
-        public async Task UpdateProductAsync(Product product)
+        public Task UpdateAsync(Product product)
         {
-            _context.Products.Update(product);
-            await _context.SaveChangesAsync();
+            return _productRepository.UpdateAsync(product);
         }
 
-        public async Task DeleteProductAsync(int id)
+        public Task DeleteAsync(Product product)
         {
-            var product = await _context.Products.FindAsync(id);
-            if (product != null)
-            {
-                _context.Products.Remove(product);
-                await _context.SaveChangesAsync();
-            }
+            return _productRepository.DeleteAsync(product);
         }
 
-        public async Task<(List<Product> Products, int TotalCount)> SearchAsync(string keyword, int? categoryId, int page, int pageSize)
+        public Task<List<Product>> GetByCategoryAsync(int categoryId)
         {
-            var query = _context.Products.Include(p => p.Category).AsQueryable();
+            return _productRepository.GetByCategoryAsync(categoryId);
+        }
 
-            // Lọc theo từ khóa
-            if (!string.IsNullOrEmpty(keyword))
-            {
-                query = query.Where(p => p.Name.Contains(keyword) || p.Description.Contains(keyword));
-            }
+        public Task<List<Product>> GetFeaturedAsync()
+        {
+            return _productRepository.GetFeaturedAsync();
+        }
 
-            // Lọc theo danh mục
-            if (categoryId.HasValue)
-            {
-                query = query.Where(p => p.CategoryId == categoryId.Value);
-            }
-
-            var totalCount = await query.CountAsync();
-
-            var products = await query
-                .OrderByDescending(p => p.Id)
-                .Skip((page - 1) * pageSize)
-                .Take(pageSize)
-                .ToListAsync();
-
-            return (products, totalCount);
+        public Task<List<Product>> FilterByNameAsync(string? name)
+        {
+            return _productRepository.FilterByNameAsync(name);
         }
     }
 }

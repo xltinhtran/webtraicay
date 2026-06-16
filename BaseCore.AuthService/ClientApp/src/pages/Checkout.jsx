@@ -2,6 +2,8 @@
 import { useLocation, useNavigate } from 'react-router-dom';
 import { ordersApi, couponsApi } from '../services/api';
 
+const getProductUnit = (product) => product?.unit || product?.Unit || 'sản phẩm';
+
 const Checkout = () => {
     const location = useLocation();
     const navigate = useNavigate();
@@ -10,7 +12,7 @@ const Checkout = () => {
         subtotal: 0,
         cartItems: []
     };
-
+ 
     const [provinces, setProvinces] = useState([]);
     const [districts, setDistricts] = useState([]);
     const [wards, setWards] = useState([]);
@@ -22,6 +24,9 @@ const Checkout = () => {
 
     const [couponCode, setCouponCode] = useState('');
     const [discount, setDiscount] = useState(0);
+    const [availableCoupons, setAvailableCoupons] = useState([]);
+    const [showCouponDropdown, setShowCouponDropdown] = useState(false);
+    const [isLoadingCoupons, setIsLoadingCoupons] = useState(false);
 
     const [shippingFee, setShippingFee] = useState(0);
     const [distanceKm, setDistanceKm] = useState(0);
@@ -46,8 +51,32 @@ const Checkout = () => {
     const MAX_DELIVERY_DISTANCE_KM = 300;
     const totalAmount = Math.max(0, subtotal - discount) + shippingFee;
 
+    const getCurrentUserId = () => {
+        const userData = JSON.parse(localStorage.getItem('user') || '{}');
+        return userData.userId || userData.id || '';
+    };
+
     const formatCurrency = (value) => {
         return Number(value || 0).toLocaleString('vi-VN') + ' đ';
+    };
+
+    const formatDate = (value) => {
+        if (!value) return 'Không giới hạn';
+
+        const date = new Date(value);
+        if (Number.isNaN(date.getTime())) return 'Không giới hạn';
+
+        return date.toLocaleDateString('vi-VN');
+    };
+
+    const isCouponUsable = (coupon) => {
+        if (!coupon?.isActive) return false;
+
+        const expiryDate = new Date(coupon.expiryDate);
+        if (Number.isNaN(expiryDate.getTime())) return true;
+
+        expiryDate.setHours(23, 59, 59, 999);
+        return expiryDate >= new Date();
     };
 
     const formatCountdown = (seconds) => {
@@ -94,6 +123,31 @@ const Checkout = () => {
             .then(data => setProvinces(data))
             .catch(err => console.log('Lỗi tải tỉnh thành:', err));
     }, []);
+
+    useEffect(() => {
+        const fetchAvailableCoupons = async () => {
+            setIsLoadingCoupons(true);
+
+            try {
+                const currentUserId = getCurrentUserId();
+                const response = await couponsApi.getAvailable({
+                    userId: currentUserId || undefined,
+                    subtotal
+                });
+                const data = response.data;
+                const list = data.items || data || [];
+
+                setAvailableCoupons(list.filter(isCouponUsable));
+            } catch (error) {
+                console.error('Lỗi tải danh sách voucher:', error);
+                setAvailableCoupons([]);
+            } finally {
+                setIsLoadingCoupons(false);
+            }
+        };
+
+        fetchAvailableCoupons();
+    }, [subtotal]);
 
     const handleProvinceChange = (e) => {
         const pCode = e.target.value;
@@ -282,6 +336,7 @@ const Checkout = () => {
 
     const handleApplyCoupon = async () => {
         const cleanCouponCode = couponCode.trim();
+        setShowCouponDropdown(false);
 
         if (!cleanCouponCode) {
             alert('Ní vui lòng nhập mã giảm giá trước nhé!');
@@ -289,7 +344,8 @@ const Checkout = () => {
         }
 
         try {
-            const response = await couponsApi.check(cleanCouponCode);
+            const currentUserId = getCurrentUserId();
+            const response = await couponsApi.check(cleanCouponCode, currentUserId || undefined, subtotal);
             const data = response.data;
             const phanTramGiam = Number(data.discountPercent || 0) / 100;
             const discountAmount = subtotal * phanTramGiam;
@@ -303,6 +359,22 @@ const Checkout = () => {
             alert(error.response?.data || 'Mã giảm giá không hợp lệ hoặc đã hết hạn!');
         }
     };
+
+    const handleSelectCoupon = (coupon) => {
+        setCouponCode(coupon.code || '');
+        setDiscount(0);
+        setShowCouponDropdown(false);
+        resetPaymentQr();
+    };
+
+    const filteredCoupons = availableCoupons
+        .filter((coupon) => {
+            const keyword = couponCode.trim().toLowerCase();
+            if (!keyword) return true;
+
+            return (coupon.code || '').toLowerCase().includes(keyword);
+        })
+        .slice(0, 6);
 
     const handlePlaceOrder = async (e) => {
         e.preventDefault();
@@ -584,33 +656,101 @@ const Checkout = () => {
                             </div>
 
                             <div className="col-md-12 col-lg-6 col-xl-5">
-                                <div className="table-responsive bg-light rounded p-5 border">
+                                <div className="table-responsive bg-light rounded p-5 border" style={{ overflow: 'visible' }}>
                                     <h2 className="display-6 mb-4" style={{ fontSize: '26px' }}>
                                         Hóa đơn đơn hàng
                                     </h2>
 
-                                    <div className="input-group mb-4">
-                                        <input
-                                            type="text"
-                                            className="form-control py-3"
-                                            placeholder="Nhập mã giảm giá..."
-                                            value={couponCode}
-                                            onChange={(e) => {
-                                                setCouponCode(e.target.value);
-                                                resetPaymentQr();
+                                    <div className="mb-4" style={{ position: 'relative' }}>
+                                        <div className="input-group">
+                                            <input
+                                                type="text"
+                                                className="form-control py-3"
+                                                placeholder="Nhập mã giảm giá..."
+                                                value={couponCode}
+                                                onFocus={() => setShowCouponDropdown(true)}
+                                                onClick={() => setShowCouponDropdown(true)}
+                                                onBlur={() => {
+                                                    setTimeout(() => setShowCouponDropdown(false), 150);
+                                                }}
+                                                onChange={(e) => {
+                                                    setCouponCode(e.target.value);
+                                                    setShowCouponDropdown(true);
+                                                    resetPaymentQr();
 
-                                                if (e.target.value.trim() === '') {
-                                                    setDiscount(0);
-                                                }
-                                            }}
-                                        />
-                                        <button
-                                            className="btn btn-warning fw-bold text-dark px-4"
-                                            type="button"
-                                            onClick={handleApplyCoupon}
-                                        >
-                                            ÁP DỤNG
-                                        </button>
+                                                    if (e.target.value.trim() === '') {
+                                                        setDiscount(0);
+                                                    }
+                                                }}
+                                            />
+                                            <button
+                                                className="btn btn-warning fw-bold text-dark px-4"
+                                                type="button"
+                                                onClick={handleApplyCoupon}
+                                            >
+                                                ÁP DỤNG
+                                            </button>
+                                        </div>
+
+                                        {showCouponDropdown && (
+                                            <div
+                                                className="bg-white border shadow-sm"
+                                                style={{
+                                                    position: 'absolute',
+                                                    top: '100%',
+                                                    left: 0,
+                                                    right: 0,
+                                                    zIndex: 30,
+                                                    marginTop: 4,
+                                                    borderRadius: 8,
+                                                    overflow: 'hidden'
+                                                }}
+                                            >
+                                                {isLoadingCoupons ? (
+                                                    <div className="px-3 py-3 text-muted">
+                                                        Đang tải voucher...
+                                                    </div>
+                                                ) : filteredCoupons.length > 0 ? (
+                                                    filteredCoupons.map((coupon) => (
+                                                        <button
+                                                            key={coupon.id || coupon.code}
+                                                            type="button"
+                                                            className="dropdown-item d-flex justify-content-between align-items-center py-3"
+                                                            onMouseDown={(e) => {
+                                                                e.preventDefault();
+                                                                handleSelectCoupon(coupon);
+                                                            }}
+                                                        >
+                                                            <span>
+                                                                <strong className="text-uppercase text-dark">
+                                                                    {coupon.code}
+                                                                </strong>
+                                                                <small className="d-block text-muted">
+                                                                    Hết hạn: {formatDate(coupon.expiryDate)}
+                                                                </small>
+                                                                {(coupon.couponType === 'Personal' || coupon.couponType === 'Loyalty') && (
+                                                                    <small className="d-block text-success">
+                                                                        Voucher riêng cho bạn
+                                                                    </small>
+                                                                )}
+                                                                {coupon.minOrderAmount > 0 && (
+                                                                    <small className="d-block text-muted">
+                                                                        Đơn từ {formatCurrency(coupon.minOrderAmount)}
+                                                                    </small>
+                                                                )}
+                                                            </span>
+                                                            <span className="badge bg-warning text-dark">
+                                                                -{coupon.discountPercent}%
+                                                            </span>
+                                                        </button>
+                                                    ))
+                                                ) : (
+                                                    <div className="px-3 py-3 text-muted">
+                                                        Không có voucher phù hợp
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
                                     </div>
 
                                     <table className="table align-middle mt-2">
@@ -644,7 +784,7 @@ const Checkout = () => {
                                                             <td>
                                                                 {item.name}{' '}
                                                                 <span className="text-muted fw-bold">
-                                                                    x{item.quantity}
+                                                                    x{item.quantity} {getProductUnit(item)}
                                                                 </span>
                                                             </td>
                                                             <td className="fw-bold">

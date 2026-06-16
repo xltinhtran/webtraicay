@@ -31,7 +31,6 @@ const Contact = () => {
             }
         });
     };
-
     const handleSendMessage = (e) => {
         e.preventDefault();
         alert('Cảm ơn ní đã liên hệ! Tụi tui sẽ phản hồi sớm nhất có thể. 🚀');

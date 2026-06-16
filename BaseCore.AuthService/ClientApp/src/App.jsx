@@ -6,10 +6,12 @@ import MainLayout from './components/MainLayout';
 
 // Import các trang Admin
 import Login from './pages/Login';
+import Register from './pages/Register';
 import Dashboard from './pages/Dashboard';
 import Products from './pages/Products';
 import Categories from './pages/Categories';
 import Users from './pages/Users';
+import Coupons from './pages/Coupons';
 // ... các import cũ giữ nguyên
 import Orders from './pages/Orders'; // 1. Import trang Orders mới tạo
 
@@ -41,10 +43,12 @@ function App() {
 
                     {/* ===== HỆ THỐNG ĐĂNG NHẬP & QUẢN TRỊ ===== */}
                     <Route path="/login" element={<Login />} />
+                    <Route path="/register" element={<Register />} />
 
                     <Route path="/dashboard" element={<ProtectedRoute><MainLayout><Dashboard /></MainLayout></ProtectedRoute>} />
                     <Route path="/products" element={<ProtectedRoute><MainLayout><Products /></MainLayout></ProtectedRoute>} />
                     <Route path="/categories" element={<ProtectedRoute><MainLayout><Categories /></MainLayout></ProtectedRoute>} />
+                    <Route path="/coupons" element={<ProtectedRoute><MainLayout><Coupons /></MainLayout></ProtectedRoute>} />
                     <Route path="/users" element={<ProtectedRoute><MainLayout><Users /></MainLayout></ProtectedRoute>} />
                     {/* 2. Đăng ký đường dẫn Orders và bọc bảo vệ bởi ProtectedRoute[cite: 33, 51] */}
                     <Route path="/orders" element={<ProtectedRoute><MainLayout><Orders /></MainLayout></ProtectedRoute>} />

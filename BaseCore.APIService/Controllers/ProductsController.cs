@@ -1,74 +1,157 @@
-//ProductCTL
+using BaseCore.Entities;
+using BaseCore.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using BaseCore.Entities;
-using BaseCore.Repository.EFCore;
-using Microsoft.EntityFrameworkCore;
-using BaseCore.Repository;
 
 namespace BaseCore.APIService.Controllers
 {
-    /// <summary>
-    /// Product API Controller
-    /// Teaching: RESTful API, CRUD Operations, EF Core (Bài 10, 11)
-    /// </summary>
     [Route("api/[controller]")]
     [ApiController]
     public class ProductsController : ControllerBase
     {
-        private readonly IProductRepositoryEF _productRepository;
-        private readonly ICategoryRepositoryEF _categoryRepository;
-        private readonly BaseCoreDbContext _context;
+        private readonly IProductService _productService;
+        private readonly ICategoryService _categoryService;
+        private readonly IWebHostEnvironment _env;
 
-        public ProductsController(IProductRepositoryEF productRepository, ICategoryRepositoryEF categoryRepository, BaseCoreDbContext context)
+        public ProductsController(IProductService productService, ICategoryService categoryService, IWebHostEnvironment env)
         {
-            _productRepository = productRepository;
-            _categoryRepository = categoryRepository;
-            _context = context;
+            _productService = productService;
+            _categoryService = categoryService;
+            _env = env;
         }
 
-        /// <summary>
-        /// Get all products with pagination and search
-        /// </summary>
+        [HttpPost("upload-image")]
+        [Authorize]
+        public async Task<IActionResult> UploadImage([FromForm] IFormFile imageFile)
+        {
+            if (imageFile == null || imageFile.Length == 0)
+                return BadRequest(new { message = "Image file is required" });
+
+            if (!IsAllowedImage(imageFile.FileName))
+                return BadRequest(new { message = "Only JPG, PNG, GIF, and WEBP images are allowed" });
+
+            var webRoot = _env.WebRootPath ?? Path.Combine(Directory.GetCurrentDirectory(), "wwwroot");
+            var uploadsFolder = Path.Combine(webRoot, "img", "products");
+
+            if (!Directory.Exists(uploadsFolder))
+                Directory.CreateDirectory(uploadsFolder);
+
+            var uniqueFileName = BuildUniqueImageFileName(imageFile.FileName);
+            var filePath = Path.Combine(uploadsFolder, uniqueFileName);
+
+            using (var fileStream = new FileStream(filePath, FileMode.Create))
+            {
+                await imageFile.CopyToAsync(fileStream);
+            }
+
+            return Ok(new { imageUrl = $"/img/products/{uniqueFileName}" });
+        }
+
+        [HttpGet("{id}/images")]
+        public async Task<IActionResult> GetImages(int id)
+        {
+            var product = await _productService.GetByIdAsync(id);
+            if (product == null)
+                return NotFound(new { message = "Product not found" });
+
+            var galleryFolder = GetProductGalleryFolder(id);
+            if (!Directory.Exists(galleryFolder))
+                return Ok(Array.Empty<object>());
+
+            var files = Directory.GetFiles(galleryFolder)
+                .Where(file => IsAllowedImage(file))
+                .OrderBy(file => System.IO.File.GetCreationTimeUtc(file))
+                .Select(file => new
+                {
+                    imageUrl = $"/img/products/{id}/gallery/{Path.GetFileName(file)}"
+                })
+                .ToList();
+
+            return Ok(files);
+        }
+
+        [HttpPost("{id}/images")]
+        [Authorize]
+        public async Task<IActionResult> UploadImages(int id, [FromForm] List<IFormFile> imageFiles)
+        {
+            var product = await _productService.GetByIdAsync(id);
+            if (product == null)
+                return NotFound(new { message = "Product not found" });
+
+            if (imageFiles == null || imageFiles.Count == 0)
+                return BadRequest(new { message = "At least one image file is required" });
+
+            var galleryFolder = GetProductGalleryFolder(id);
+            if (!Directory.Exists(galleryFolder))
+                Directory.CreateDirectory(galleryFolder);
+
+            var uploadedImages = new List<object>();
+
+            foreach (var imageFile in imageFiles)
+            {
+                if (imageFile == null || imageFile.Length == 0)
+                    continue;
+
+                if (!IsAllowedImage(imageFile.FileName))
+                    return BadRequest(new { message = "Only JPG, PNG, GIF, and WEBP images are allowed" });
+
+                var uniqueFileName = BuildUniqueImageFileName(imageFile.FileName);
+                var filePath = Path.Combine(galleryFolder, uniqueFileName);
+
+                using (var fileStream = new FileStream(filePath, FileMode.Create))
+                {
+                    await imageFile.CopyToAsync(fileStream);
+                }
+
+                uploadedImages.Add(new
+                {
+                    imageUrl = $"/img/products/{id}/gallery/{uniqueFileName}"
+                });
+            }
+
+            return Ok(uploadedImages);
+        }
+
+        [HttpDelete("{id}/images")]
+        [Authorize]
+        public async Task<IActionResult> DeleteImage(int id, [FromQuery] string imageUrl)
+        {
+            var product = await _productService.GetByIdAsync(id);
+            if (product == null)
+                return NotFound(new { message = "Product not found" });
+
+            if (string.IsNullOrWhiteSpace(imageUrl))
+                return BadRequest(new { message = "Image URL is required" });
+
+            var galleryFolder = GetProductGalleryFolder(id);
+            var fileName = Path.GetFileName(imageUrl);
+            var filePath = Path.GetFullPath(Path.Combine(galleryFolder, fileName));
+            var safeGalleryFolder = Path.GetFullPath(galleryFolder);
+
+            if (!filePath.StartsWith(safeGalleryFolder, StringComparison.OrdinalIgnoreCase))
+                return BadRequest(new { message = "Invalid image path" });
+
+            if (System.IO.File.Exists(filePath))
+                System.IO.File.Delete(filePath);
+
+            return Ok(new { message = "Image deleted successfully" });
+        }
+
         [HttpGet]
         public async Task<IActionResult> GetAll(
             [FromQuery] string? keyword,
             [FromQuery] int? categoryId,
+            [FromQuery] decimal? minPrice,
+            [FromQuery] decimal? maxPrice,
+            [FromQuery] string? quality,
+            [FromQuery] string? stockStatus,
             [FromQuery] int page = 1,
             [FromQuery] int pageSize = 10)
         {
             try
             {
-                // Khởi tạo query móc thẳng vào DB
-                var query = _context.Products.AsNoTracking().AsQueryable();
+                var (products, totalCount) = await _productService.SearchAsync(keyword, categoryId, minPrice, maxPrice, quality, stockStatus, page, pageSize);
 
-                // 🌟 BỘ TÌM KIẾM 3 TIÊU CHÍ (TÊN SP, TÊN DANH MỤC, CHẤT LƯỢNG) 🌟
-                if (!string.IsNullOrEmpty(keyword))
-                {
-                    query = query.Where(p =>
-                        p.Name.Contains(keyword) ||
-                        p.Category.Name.Contains(keyword) || // Móc sang bảng Category lấy Tên ra tìm
-                        (p.Quality ?? "").Contains(keyword)
-                    );
-                }
-
-                // Giữ lại logic lọc theo Category cũ của ní lỡ sau này xài
-                if (categoryId.HasValue && categoryId > 0)
-                {
-                    query = query.Where(p => p.CategoryId == categoryId);
-                }
-
-                // Đếm tổng số lượng để chia trang
-                var totalCount = await query.CountAsync();
-
-                // Cắt lấy đúng số dòng của trang đó
-                var products = await query
-                    .OrderByDescending(p => p.Id)
-                    .Skip((page - 1) * pageSize)
-                    .Take(pageSize)
-                    .ToListAsync();
-
-                // Trả về cho React
                 return Ok(new
                 {
                     items = products,
@@ -84,28 +167,21 @@ namespace BaseCore.APIService.Controllers
             }
         }
 
-        /// <summary>
-        /// Get product by ID
-        /// </summary>
         [HttpGet("{id}")]
         public async Task<IActionResult> GetById(int id)
         {
-            var product = await _productRepository.GetByIdAsync(id);
+            var product = await _productService.GetByIdAsync(id);
             if (product == null)
                 return NotFound(new { message = "Product not found" });
 
             return Ok(product);
         }
 
-        /// <summary>
-        /// Create new product (requires authentication)
-        /// </summary>
         [HttpPost]
         [Authorize]
         public async Task<IActionResult> Create([FromBody] ProductCreateDto dto)
         {
-            // Validate category exists
-            var category = await _categoryRepository.GetByIdAsync(dto.CategoryId);
+            var category = await _categoryService.GetByIdAsync(dto.CategoryId);
             if (category == null)
                 return BadRequest(new { message = "Category not found" });
 
@@ -114,108 +190,111 @@ namespace BaseCore.APIService.Controllers
                 Name = dto.Name,
                 Price = dto.Price,
                 Stock = dto.Stock,
+                Unit = string.IsNullOrWhiteSpace(dto.Unit) ? "sản phẩm" : dto.Unit.Trim(),
+                LowStockThreshold = dto.LowStockThreshold <= 0 ? 10 : dto.LowStockThreshold,
                 CategoryId = dto.CategoryId,
                 Description = dto.Description,
                 ImageUrl = dto.ImageUrl ?? "",
                 Quality = dto.Quality,
-
-                // ---> NHẬN CÔNG TẮC VÀ TÍNH GIÁ GIẢM 30% TỰ ĐỘNG
                 IsFeatured = dto.IsFeatured,
                 DiscountPrice = dto.IsFeatured ? dto.Price * 0.7m : 0
             };
 
-            await _productRepository.AddAsync(product);
+            await _productService.CreateAsync(product);
             return CreatedAtAction(nameof(GetById), new { id = product.Id }, product);
         }
 
-        /// <summary>
-        /// Update product (requires authentication)
-        /// </summary>
         [HttpPut("{id}")]
         [Authorize]
         public async Task<IActionResult> Update(int id, [FromBody] ProductUpdateDto dto)
         {
-            var product = await _productRepository.GetByIdAsync(id);
+            var product = await _productService.GetByIdAsync(id);
             if (product == null)
                 return NotFound(new { message = "Product not found" });
 
             product.Name = dto.Name ?? product.Name;
             product.Price = dto.Price ?? product.Price;
             product.Stock = dto.Stock ?? product.Stock;
+            product.Unit = string.IsNullOrWhiteSpace(dto.Unit) ? product.Unit : dto.Unit.Trim();
+            product.LowStockThreshold = dto.LowStockThreshold ?? product.LowStockThreshold;
             product.CategoryId = dto.CategoryId ?? product.CategoryId;
             product.Description = dto.Description ?? product.Description;
             product.ImageUrl = dto.ImageUrl ?? product.ImageUrl;
             product.Quality = dto.Quality ?? product.Quality;
 
-            // ---> CẬP NHẬT CÔNG TẮC NẾU CÓ GỬI LÊN
             if (dto.IsFeatured.HasValue)
-            {
                 product.IsFeatured = dto.IsFeatured.Value;
-            }
 
-            // ---> TÍNH LẠI GIÁ (Lỡ Admin có đổi Giá gốc thì Giá giảm cũng phải nhảy theo)
-            if (product.IsFeatured)
-            {
-                product.DiscountPrice = product.Price * 0.7m; // Giảm 30%
-            }
-            else
-            {
-                product.DiscountPrice = 0; // Tắt nổi bật thì chém luôn giá giảm
-            }
+            product.DiscountPrice = product.IsFeatured ? product.Price * 0.7m : 0;
 
-            await _productRepository.UpdateAsync(product);
+            await _productService.UpdateAsync(product);
             return Ok(product);
         }
 
-        /// <summary>
-        /// Delete product (requires authentication)
-        /// </summary>
         [HttpDelete("{id}")]
         [Authorize]
         public async Task<IActionResult> Delete(int id)
         {
-            var product = await _productRepository.GetByIdAsync(id);
+            var product = await _productService.GetByIdAsync(id);
             if (product == null)
                 return NotFound(new { message = "Product not found" });
 
-            await _productRepository.DeleteAsync(product);
+            await _productService.DeleteAsync(product);
             return Ok(new { message = "Product deleted successfully" });
         }
 
-        /// <summary>
-        /// Get products by category
-        /// </summary>
         [HttpGet("category/{categoryId}")]
         public async Task<IActionResult> GetByCategory(int categoryId)
         {
-            var products = await _productRepository.GetByCategoryAsync(categoryId);
+            var products = await _productService.GetByCategoryAsync(categoryId);
             return Ok(products);
         }
 
         [HttpGet("featured")]
         public async Task<IActionResult> GetFeaturedProducts()
         {
-            var featured = await _context.Products
-                                 .Where(p => p.IsFeatured)
-                                 //.Take(3)
-                                 .ToListAsync();
-
+            var featured = await _productService.GetFeaturedAsync();
             return Ok(featured);
+        }
+
+        private string GetProductGalleryFolder(int productId)
+        {
+            var webRoot = _env.WebRootPath ?? Path.Combine(Directory.GetCurrentDirectory(), "wwwroot");
+            return Path.Combine(webRoot, "img", "products", productId.ToString(), "gallery");
+        }
+
+        private static bool IsAllowedImage(string fileName)
+        {
+            var extension = Path.GetExtension(fileName).ToLowerInvariant();
+            var allowedExtensions = new[] { ".jpg", ".jpeg", ".png", ".gif", ".webp" };
+            return allowedExtensions.Contains(extension);
+        }
+
+        private static string BuildUniqueImageFileName(string fileName)
+        {
+            var extension = Path.GetExtension(fileName).ToLowerInvariant();
+            var safeFileName = Path.GetFileNameWithoutExtension(fileName);
+
+            foreach (var invalidChar in Path.GetInvalidFileNameChars())
+            {
+                safeFileName = safeFileName.Replace(invalidChar, '-');
+            }
+
+            return $"{Guid.NewGuid()}_{safeFileName}{extension}";
         }
     }
 
-    // DTOs
     public class ProductCreateDto
     {
         public string Name { get; set; } = "";
         public decimal Price { get; set; }
-        public int Stock { get; set; }
+        public decimal Stock { get; set; }
+        public string? Unit { get; set; }
+        public decimal LowStockThreshold { get; set; } = 10;
         public int CategoryId { get; set; }
         public string? Description { get; set; }
         public string? ImageUrl { get; set; }
         public string? Quality { get; set; }
-
-        // ---> MỞ ĐƯỜNG CHO CÔNG TẮC TỪ REACT BAY VÀO
         public bool IsFeatured { get; set; }
     }
 
@@ -223,13 +302,14 @@ namespace BaseCore.APIService.Controllers
     {
         public string? Name { get; set; }
         public decimal? Price { get; set; }
-        public int? Stock { get; set; }
+        public decimal? Stock { get; set; }
+        public string? Unit { get; set; }
+        public decimal? LowStockThreshold { get; set; }
         public int? CategoryId { get; set; }
         public string? Description { get; set; }
         public string? ImageUrl { get; set; }
         public string? Quality { get; set; }
-
-        // ---> MỞ ĐƯỜNG CHO CÔNG TẮC TỪ REACT BAY VÀO (Cho phép null)
         public bool? IsFeatured { get; set; }
     }
+
 }

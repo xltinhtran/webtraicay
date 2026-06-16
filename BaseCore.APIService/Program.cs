@@ -4,6 +4,7 @@ using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using BaseCore.Repository;
 using BaseCore.Repository.EFCore;
+using BaseCore.Services;
 using System.Text;
 using System.Text.Json.Serialization; // <--- THÊM DÒNG NÀY ĐỂ TRỊ BỆNH NÈ NÍ!
 
@@ -72,6 +73,17 @@ builder.Services.AddScoped<IProductRepositoryEF, ProductRepositoryEF>();
 builder.Services.AddScoped<ICategoryRepositoryEF, CategoryRepositoryEF>();
 builder.Services.AddScoped<IOrderRepositoryEF, OrderRepositoryEF>();
 builder.Services.AddScoped<IOrderDetailRepositoryEF, OrderDetailRepositoryEF>();
+builder.Services.AddScoped<ICartRepositoryEF, CartRepositoryEF>();
+builder.Services.AddScoped<ICouponRepositoryEF, CouponRepositoryEF>();
+builder.Services.AddScoped<IProductReviewRepositoryEF, ProductReviewRepositoryEF>();
+
+// Service Registration
+builder.Services.AddScoped<IProductService, ProductService>();
+builder.Services.AddScoped<ICategoryService, CategoryService>();
+builder.Services.AddScoped<IOrderService, OrderService>();
+builder.Services.AddScoped<ICartService, CartService>();
+builder.Services.AddScoped<ICouponService, CouponService>();
+builder.Services.AddScoped<IProductReviewService, ProductReviewService>();
 
 // JWT Authentication
 var key = Encoding.ASCII.GetBytes(builder.Configuration["Jwt:SecretKey"] ?? "YourSecretKeyForAuthenticationShouldBeLongEnough");

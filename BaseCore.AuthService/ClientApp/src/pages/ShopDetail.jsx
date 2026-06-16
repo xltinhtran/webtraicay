@@ -1,12 +1,36 @@
 ﻿import React, { useState, useEffect } from 'react';
 import { Link, useParams, useNavigate } from 'react-router-dom';
-import { productsApi, categoriesApi, cartsApi, reviewsApi } from '../services/api';
+import { productsApi, categoriesApi, cartsApi, reviewsApi, API_STATIC_BASE_URL } from '../services/api';
+
+const getProductImageUrl = (imageUrl) => {
+    if (!imageUrl) return '/img/single-item.jpg';
+    if (imageUrl.startsWith('http') || imageUrl.startsWith('data:') || imageUrl.startsWith('blob:')) {
+        return imageUrl;
+    }
+
+    if (imageUrl.startsWith('/img/products/')) {
+        return `${API_STATIC_BASE_URL}${imageUrl}`;
+    }
+
+    return imageUrl;
+};
+
+const getProductUnit = (product) => product?.unit || product?.Unit || 'sản phẩm';
+
+const formatQuantity = (value) => {
+    const number = Number(value || 0);
+    return Number.isInteger(number)
+        ? number.toLocaleString('vi-VN')
+        : number.toLocaleString('vi-VN', { maximumFractionDigits: 2 });
+};
 
 const ShopDetail = () => {
     const navigate = useNavigate();
     const { id } = useParams();
 
     const [product, setProduct] = useState(null);
+    const [selectedProductImage, setSelectedProductImage] = useState('');
+    const [productGalleryImages, setProductGalleryImages] = useState([]);
     const [categories, setCategories] = useState([]);
     const [featured, setFeatured] = useState([]);
 
@@ -18,6 +42,31 @@ const ShopDetail = () => {
     const [activeTab, setActiveTab] = useState('description');
 
     const [reviews, setReviews] = useState([]);
+
+    const loadProductImages = (productData) => {
+        if (!productData?.id) {
+            setProductGalleryImages([]);
+            setSelectedProductImage(getProductImageUrl(productData?.imageUrl || productData?.ImageUrl || ''));
+            return;
+        }
+
+        const mainImageUrl = productData.imageUrl || productData.ImageUrl || '';
+        setSelectedProductImage(getProductImageUrl(mainImageUrl));
+
+        productsApi.getImages(productData.id)
+            .then(res => {
+                const galleryImages = (res.data || []).map((image) => image.imageUrl || image.ImageUrl || image);
+                setProductGalleryImages(galleryImages);
+
+                if (!mainImageUrl && galleryImages.length > 0) {
+                    setSelectedProductImage(getProductImageUrl(galleryImages[0]));
+                }
+            })
+            .catch(err => {
+                console.log('Lỗi tải ảnh phụ sản phẩm: ', err);
+                setProductGalleryImages([]);
+            });
+    };
 
     const formatCurrency = (value) => {
         return Number(value || 0).toLocaleString('vi-VN') + ' đ';
@@ -48,7 +97,10 @@ const ShopDetail = () => {
 
         if (id) {
             productsApi.getById(id)
-                .then(res => setProduct(res.data))
+                .then(res => {
+                    setProduct(res.data);
+                    loadProductImages(res.data);
+                })
                 .catch(err => console.log('Lỗi tải sản phẩm chi tiết: ', err));
 
             reviewsApi.getByProductId(id)
@@ -61,6 +113,7 @@ const ShopDetail = () => {
 
                     if (items.length > 0) {
                         setProduct(items[0]);
+                        loadProductImages(items[0]);
 
                         reviewsApi.getByProductId(items[0].id)
                             .then(revRes => setReviews(revRes.data || []))
@@ -121,7 +174,7 @@ const ShopDetail = () => {
         if (product && quantity < product.stock) {
             setQuantity(quantity + 1);
         } else {
-            alert(`Trong kho chỉ còn ${product?.stock} sản phẩm thôi ní ơi!`);
+            alert(`Trong kho chỉ còn ${formatQuantity(product?.stock)} ${getProductUnit(product)}`);
         }
     };
 
@@ -475,16 +528,60 @@ const ShopDetail = () => {
                                     <div className="border rounded">
                                         <a href="#">
                                             <img
-                                                src={product.imageUrl || '/img/single-item.jpg'}
+                                                src={selectedProductImage || getProductImageUrl(product.imageUrl || product.ImageUrl)}
                                                 className="img-fluid rounded"
                                                 alt={product.name}
                                                 style={{
                                                     width: '100%',
+                                                    height: 360,
                                                     objectFit: 'cover'
                                                 }}
                                             />
                                         </a>
                                     </div>
+                                    {[product.imageUrl || product.ImageUrl, ...productGalleryImages].filter(Boolean).length > 1 && (
+                                        <div
+                                            className="d-flex mt-3"
+                                            style={{
+                                                gap: 10,
+                                                overflowX: 'auto',
+                                                paddingBottom: 4
+                                            }}
+                                        >
+                                            {[product.imageUrl || product.ImageUrl, ...productGalleryImages].filter(Boolean).map((imageUrl, index) => {
+                                                const normalizedImageUrl = getProductImageUrl(imageUrl);
+                                                const isActive = normalizedImageUrl === selectedProductImage;
+
+                                                return (
+                                                    <button
+                                                        key={`${imageUrl}-${index}`}
+                                                        type="button"
+                                                        className="p-0 bg-white"
+                                                        onClick={() => setSelectedProductImage(normalizedImageUrl)}
+                                                        style={{
+                                                            border: isActive ? '2px solid #81C408' : '1px solid #dee2e6',
+                                                            borderRadius: 8,
+                                                            flex: '0 0 auto'
+                                                        }}
+                                                    >
+                                                        <img
+                                                            src={normalizedImageUrl}
+                                                            alt={`${product.name} ${index + 1}`}
+                                                            style={{
+                                                                width: 74,
+                                                                height: 58,
+                                                                objectFit: 'cover',
+                                                                borderRadius: 6
+                                                            }}
+                                                            onError={(e) => {
+                                                                e.currentTarget.src = '/img/single-item.jpg';
+                                                            }}
+                                                        />
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+                                    )}
                                 </div>
 
                                 <div className="col-lg-6">
@@ -508,6 +605,7 @@ const ShopDetail = () => {
                                         ) : (
                                             formatCurrency(product.price)
                                         )}
+                                        <span className="text-muted"> / {getProductUnit(product)}</span>
                                     </h5>
 
                                     <div className="d-flex align-items-center mb-4">
@@ -527,7 +625,7 @@ const ShopDetail = () => {
                                     </p>
 
                                     <p className="mb-4">
-                                        Kho còn: <span className="fw-bold">{product.stock}</span> sản phẩm
+                                        Kho còn: <span className="fw-bold">{formatQuantity(product.stock)}</span> {getProductUnit(product)}
                                     </p>
 
                                     <div className="input-group quantity mb-5" style={{ width: '100px' }}>

@@ -8,8 +8,10 @@ namespace BaseCore.Repository.EFCore
     /// </summary>
     public interface IProductRepositoryEF : IRepository<Product>
     {
-        Task<(List<Product> Products, int TotalCount)> SearchAsync(string? keyword, int? categoryId, int page, int pageSize);
+        Task<(List<Product> Products, int TotalCount)> SearchAsync(string? keyword, int? categoryId, decimal? minPrice, decimal? maxPrice, string? quality, string? stockStatus, int page, int pageSize);
         Task<List<Product>> GetByCategoryAsync(int categoryId);
+        Task<List<Product>> GetFeaturedAsync();
+        Task<List<Product>> FilterByNameAsync(string? name);
     }
 
     public class ProductRepositoryEF : Repository<Product>, IProductRepositoryEF
@@ -19,21 +21,53 @@ namespace BaseCore.Repository.EFCore
         {
         }
 
-        public async Task<(List<Product> Products, int TotalCount)> SearchAsync(string? keyword, int? categoryId, int page, int pageSize)
+        public async Task<(List<Product> Products, int TotalCount)> SearchAsync(string? keyword, int? categoryId, decimal? minPrice, decimal? maxPrice, string? quality, string? stockStatus, int page, int pageSize)
         {
-            var query = _dbSet.Include(p => p.Category).AsQueryable();
+            var query = _dbSet.Include(p => p.Category).AsNoTracking().AsQueryable();
 
             if (!string.IsNullOrEmpty(keyword))
             {
                 keyword = keyword.ToLower();
-                query = query.Where(p =>
-                    p.Name.ToLower().Contains(keyword) ||
-                    (p.Description != null && p.Description.ToLower().Contains(keyword)));
+                query = query.Where(p => p.Name.ToLower().Contains(keyword));
             }
 
             if (categoryId.HasValue && categoryId > 0)
             {
                 query = query.Where(p => p.CategoryId == categoryId);
+            }
+
+            if (minPrice.HasValue && minPrice.Value >= 0)
+            {
+                query = query.Where(p => p.Price >= minPrice.Value);
+            }
+
+            if (maxPrice.HasValue && maxPrice.Value >= 0)
+            {
+                query = query.Where(p => p.Price <= maxPrice.Value);
+            }
+
+            if (!string.IsNullOrWhiteSpace(quality))
+            {
+                var normalizedQuality = quality.Trim().ToLower();
+                query = query.Where(p => (p.Quality ?? "").ToLower() == normalizedQuality);
+            }
+
+            if (!string.IsNullOrWhiteSpace(stockStatus))
+            {
+                var normalizedStockStatus = stockStatus.Trim().ToLower();
+
+                if (normalizedStockStatus == "out")
+                {
+                    query = query.Where(p => p.Stock <= 0);
+                }
+                else if (normalizedStockStatus == "low")
+                {
+                    query = query.Where(p => p.Stock > 0 && p.Stock <= p.LowStockThreshold);
+                }
+                else if (normalizedStockStatus == "available")
+                {
+                    query = query.Where(p => p.Stock > p.LowStockThreshold);
+                }
             }
 
             var totalCount = await query.CountAsync();
@@ -53,6 +87,25 @@ namespace BaseCore.Repository.EFCore
                 .Where(p => p.CategoryId == categoryId)
                 .Include(p => p.Category)
                 .ToListAsync();
+        }
+
+        public async Task<List<Product>> GetFeaturedAsync()
+        {
+            return await _dbSet
+                .Where(p => p.IsFeatured)
+                .ToListAsync();
+        }
+
+        public async Task<List<Product>> FilterByNameAsync(string? name)
+        {
+            var query = _dbSet.AsNoTracking().AsQueryable();
+
+            if (!string.IsNullOrWhiteSpace(name))
+            {
+                query = query.Where(p => p.Name.Contains(name));
+            }
+
+            return await query.ToListAsync();
         }
     }
 }

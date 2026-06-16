@@ -2,19 +2,19 @@
 import { Link, useNavigate } from 'react-router-dom';
 import { productsApi, cartsApi } from '../services/api';
 
+const getProductUnit = (product) => product?.unit || product?.Unit || 'sản phẩm';
+
 const Home = () => {
     const navigate = useNavigate();
 
     // --- 1. STATE LƯU DỮ LIỆU ---
     const [products, setProducts] = useState([]);
-    const [activeTab, setActiveTab] = useState('Tất cả');
     const [cartCount, setCartCount] = useState(0);
 
     // 2. STATE LƯU CHỮ TÌM KIẾM TRANG CHỦ
     const [heroSearch, setHeroSearch] = useState('');
     const [activeSlide, setActiveSlide] = useState(0);
 
-    // Tính năng tự động chuyển ảnh Banner mỗi 3 giây
     // Tính năng tự động chuyển ảnh mỗi 3 giây (Cho 4 ảnh)
     useEffect(() => {
         const timer = setInterval(() => {
@@ -48,7 +48,7 @@ const Home = () => {
             try {
                 const userData = JSON.parse(userString);
                 currentUserId = userData.userId || userData.id;
-            } catch (e) {
+            } catch {
                 localStorage.removeItem('user');
             }
         }
@@ -61,25 +61,6 @@ const Home = () => {
             setCartCount(0);
         }
     }, []);
-
-    // --- 3. BỘ LỌC TỰ ĐỘNG CHO CÁC TAB SẢN PHẨM ---
-    const filteredProducts = products.filter(item => {
-        if (activeTab === 'Tất cả') return true;
-        const catName = (item.categoryName || item.category?.name || '').toLowerCase();
-
-        if (activeTab === 'Rau củ') return catName.includes('vegetable') || catName.includes('rau');
-        if (activeTab === 'Trái cây') return catName.includes('fruit') || catName.includes('trái');
-        if (activeTab === 'Bánh mì') return catName.includes('bread') || catName.includes('bánh');
-        if (activeTab === 'Thịt') return catName.includes('meat') || catName.includes('thịt');
-
-        return false;
-    });
-
-    // --- Lấy riêng list rau củ cho khu vực Carousel rau củ ---
-    const vegProducts = products.filter(item => {
-        const catName = (item.categoryName || item.category?.name || '').toLowerCase();
-        return catName.includes('vegetable') || catName.includes('rau');
-    });
 
     // --- 4. HÀM THÊM GIỎ HÀNG ---
     const handleAddToCart = async (e, product) => {
@@ -97,7 +78,7 @@ const Home = () => {
             await cartsApi.addToCart({ userId: currentUserId, productId: product.id, quantity: 1 });
             alert(`Đã thêm "${product.name}" vào giỏ hàng thành công! 🛒`);
             setCartCount(prevCount => prevCount + 1);
-        } catch (error) {
+        } catch {
             alert("Thêm vào giỏ thất bại, kiểm tra lại API nha ní!");
         }
     };
@@ -176,7 +157,7 @@ const Home = () => {
                                     const userStorage = localStorage.getItem('user');
                                     let currentUser = null;
                                     if (userStorage && userStorage !== "undefined" && userStorage !== "null") {
-                                        try { currentUser = JSON.parse(userStorage); } catch (e) { }
+                                        try { currentUser = JSON.parse(userStorage); } catch { }
                                     }
                                     if (currentUser) {
                                         return (
@@ -281,44 +262,6 @@ const Home = () => {
                 </div>
             </div>
 
-           
-
-            {/* ========================================================= */}
-            {/* KHU VỰC 3: BĂNG CHUYỀN RAU CỦ (LẤY DATA RAU CỦ TỪ DB) */}
-            {/* ========================================================= */}
-            <div className="container-fluid vesitable py-5">
-                <div className="container py-5">
-          
-                    {/* Bỏ OwlCarousel, xài Grid cho dễ hiển thị trên React */}
-                    <div className="row g-4 mt-3">
-                        {vegProducts.slice(0, 4).map(item => (
-                            <div className="col-md-6 col-lg-4 col-xl-3" key={`veg-${item.id}`}>
-                                <div className="border border-primary rounded position-relative vesitable-item h-100">
-                                    <div className="vesitable-img">
-                                        <Link to={`/shop-detail/${item.id}`}>
-                                            <img src={item.imageUrl} className="img-fluid w-100 rounded-top" alt="" style={{ height: '220px', objectFit: 'cover' }} />
-                                        </Link>
-                                    </div>
-                                    <div className="text-white bg-primary px-3 py-1 rounded position-absolute" style={{ top: '10px', right: '10px' }}>
-                                        Rau củ
-                                    </div>
-                                    <div className="p-4 rounded-bottom">
-                                        <Link to={`/shop-detail/${item.id}`}><h4>{item.name}</h4></Link>
-                                        <p className="text-truncate">{item.description}</p>
-                                        <div className="d-flex justify-content-between flex-lg-wrap">
-                                            <p className="text-dark fs-5 fw-bold mb-0">${item.discountPrice || item.price} / kg</p>
-                                            <button onClick={(e) => handleAddToCart(e, item)} className="btn border border-secondary rounded-pill px-3 text-primary mt-2">
-                                                <i className="fa fa-shopping-bag me-2 text-primary"></i> Thêm
-                                            </button>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                </div>
-            </div>
-
             {/* Banner Section */}
             <div className="container-fluid banner bg-secondary my-5">
                 <div className="container py-5">
@@ -368,7 +311,7 @@ const Home = () => {
                                         <div className="col-6">
                                             <Link to={`/shop-detail/${item.id}`} className="h5 d-block text-truncate">{item.name}</Link>
                                             <div className="d-flex my-3">{renderStars(item.rating || 5)}</div>
-                                            <h4 className="mb-3 text-danger">{item.discountPrice || item.price} đ</h4>
+                                            <h4 className="mb-3 text-danger">{item.discountPrice || item.price} đ / {getProductUnit(item)}</h4>
                                             <button onClick={(e) => handleAddToCart(e, item)} className="btn border border-secondary rounded-pill px-3 text-primary">
                                                 <i className="fa fa-shopping-bag me-2 text-primary"></i> Thêm
                                             </button>
@@ -388,7 +331,7 @@ const Home = () => {
                                     <div className="py-4">
                                         <Link to={`/shop-detail/${item.id}`} className="h5 d-block text-truncate">{item.name}</Link>
                                         <div className="d-flex my-3 justify-content-center">{renderStars(item.rating || 5)}</div>
-                                        <h4 className="mb-3 text-danger">{item.discountPrice || item.price} đ</h4>
+                                        <h4 className="mb-3 text-danger">{item.discountPrice || item.price} đ / {getProductUnit(item)}</h4>
                                         <button onClick={(e) => handleAddToCart(e, item)} className="btn border border-secondary rounded-pill px-3 text-primary">
                                             <i className="fa fa-shopping-bag me-2 text-primary"></i> Thêm
                                         </button>
