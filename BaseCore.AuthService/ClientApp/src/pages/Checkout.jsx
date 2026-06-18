@@ -27,6 +27,7 @@ const Checkout = () => {
     const [availableCoupons, setAvailableCoupons] = useState([]);
     const [showCouponDropdown, setShowCouponDropdown] = useState(false);
     const [isLoadingCoupons, setIsLoadingCoupons] = useState(false);
+    const [couponLoadError, setCouponLoadError] = useState('');
 
     const [shippingFee, setShippingFee] = useState(0);
     const [distanceKm, setDistanceKm] = useState(0);
@@ -79,6 +80,20 @@ const Checkout = () => {
         return expiryDate >= new Date();
     };
 
+    const canShowCouponForUser = (coupon, userId) => {
+        const couponType = coupon?.couponType || 'Public';
+
+        if (couponType === 'Public') return true;
+        if (!userId) return false;
+
+        return coupon.userId === userId;
+    };
+
+    const isCouponEnoughSubtotal = (coupon) => {
+        const minOrderAmount = Number(coupon?.minOrderAmount || 0);
+        return minOrderAmount <= 0 || subtotal >= minOrderAmount;
+    };
+
     const formatCountdown = (seconds) => {
         const minutes = Math.floor(seconds / 60);
         const remainSeconds = seconds % 60;
@@ -124,29 +139,35 @@ const Checkout = () => {
             .catch(err => console.log('Lỗi tải tỉnh thành:', err));
     }, []);
 
+    const fetchCouponsForDropdown = async () => {
+        setIsLoadingCoupons(true);
+        setCouponLoadError('');
+
+        try {
+            const currentUserId = getCurrentUserId();
+            const response = await couponsApi.getAll({
+                page: 1,
+                pageSize: 1000
+            });
+            const data = response.data;
+            const list = data.items || data || [];
+
+            const visibleCoupons = list
+                .filter(isCouponUsable)
+                .filter((coupon) => canShowCouponForUser(coupon, currentUserId));
+
+            setAvailableCoupons(visibleCoupons);
+        } catch (error) {
+            console.error('Lỗi tải danh sách voucher:', error);
+            setCouponLoadError('Không tải được danh sách voucher');
+            setAvailableCoupons([]);
+        } finally {
+            setIsLoadingCoupons(false);
+        }
+    };
+
     useEffect(() => {
-        const fetchAvailableCoupons = async () => {
-            setIsLoadingCoupons(true);
-
-            try {
-                const currentUserId = getCurrentUserId();
-                const response = await couponsApi.getAvailable({
-                    userId: currentUserId || undefined,
-                    subtotal
-                });
-                const data = response.data;
-                const list = data.items || data || [];
-
-                setAvailableCoupons(list.filter(isCouponUsable));
-            } catch (error) {
-                console.error('Lỗi tải danh sách voucher:', error);
-                setAvailableCoupons([]);
-            } finally {
-                setIsLoadingCoupons(false);
-            }
-        };
-
-        fetchAvailableCoupons();
+        fetchCouponsForDropdown();
     }, [subtotal]);
 
     const handleProvinceChange = (e) => {
@@ -668,8 +689,18 @@ const Checkout = () => {
                                                 className="form-control py-3"
                                                 placeholder="Nhập mã giảm giá..."
                                                 value={couponCode}
-                                                onFocus={() => setShowCouponDropdown(true)}
-                                                onClick={() => setShowCouponDropdown(true)}
+                                                onFocus={() => {
+                                                    setShowCouponDropdown(true);
+                                                    if (!availableCoupons.length && !isLoadingCoupons) {
+                                                        fetchCouponsForDropdown();
+                                                    }
+                                                }}
+                                                onClick={() => {
+                                                    setShowCouponDropdown(true);
+                                                    if (!availableCoupons.length && !isLoadingCoupons) {
+                                                        fetchCouponsForDropdown();
+                                                    }
+                                                }}
                                                 onBlur={() => {
                                                     setTimeout(() => setShowCouponDropdown(false), 150);
                                                 }}
@@ -710,12 +741,26 @@ const Checkout = () => {
                                                     <div className="px-3 py-3 text-muted">
                                                         Đang tải voucher...
                                                     </div>
+                                                ) : couponLoadError ? (
+                                                    <div className="px-3 py-3 text-muted d-flex justify-content-between align-items-center">
+                                                        <span>{couponLoadError}</span>
+                                                        <button
+                                                            type="button"
+                                                            className="btn btn-sm btn-outline-warning"
+                                                            onMouseDown={(e) => {
+                                                                e.preventDefault();
+                                                                fetchCouponsForDropdown();
+                                                            }}
+                                                        >
+                                                            Tải lại
+                                                        </button>
+                                                    </div>
                                                 ) : filteredCoupons.length > 0 ? (
                                                     filteredCoupons.map((coupon) => (
                                                         <button
                                                             key={coupon.id || coupon.code}
                                                             type="button"
-                                                            className="dropdown-item d-flex justify-content-between align-items-center py-3"
+                                                            className={`dropdown-item d-flex justify-content-between align-items-center py-3 ${isCouponEnoughSubtotal(coupon) ? '' : 'text-muted'}`}
                                                             onMouseDown={(e) => {
                                                                 e.preventDefault();
                                                                 handleSelectCoupon(coupon);
@@ -734,8 +779,9 @@ const Checkout = () => {
                                                                     </small>
                                                                 )}
                                                                 {coupon.minOrderAmount > 0 && (
-                                                                    <small className="d-block text-muted">
+                                                                    <small className={`d-block ${isCouponEnoughSubtotal(coupon) ? 'text-muted' : 'text-danger'}`}>
                                                                         Đơn từ {formatCurrency(coupon.minOrderAmount)}
+                                                                        {!isCouponEnoughSubtotal(coupon) ? ' - chưa đủ điều kiện' : ''}
                                                                     </small>
                                                                 )}
                                                             </span>

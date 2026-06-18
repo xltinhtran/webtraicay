@@ -26,7 +26,7 @@ const Shop = () => {
   const [cartCount, setCartCount] = useState(0);
 
   const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 6;
+  const itemsPerPage =6;
 
   const [searchQuery, setSearchQuery] = useState(
     location.state?.searchTerm || "",
