@@ -234,12 +234,12 @@ const Home = () => {
                                         <a href="#" className="btn px-4 py-2 text-white rounded">Rau củ</a>
                                     </div>
                                     <div className={`carousel-item rounded ${activeSlide === 2 ? 'active' : ''}`} style={{ transition: 'opacity 0.5s ease-in-out' }}>
-                                        <img src="/img/anh.jpg" className="img-fluid w-100 h-100 rounded" alt="Next slide" />
-                                        <a href="#" className="btn px-4 py-2 text-white rounded">Thịt</a>
+                                        <img src="/img/raucu3.jfif" className="img-fluid w-100 h-100 rounded" alt="Next slide" />
+                                        <a href="#" className="btn px-4 py-2 text-white rounded">Rau củ</a>
                                     </div>
                                     <div className={`carousel-item rounded ${activeSlide === 3 ? 'active' : ''}`} style={{ transition: 'opacity 0.5s ease-in-out' }}>
-                                        <img src="/img/banhmi.jpg" className="img-fluid w-100 h-100 rounded" alt="Next slide" />
-                                        <a href="#" className="btn px-4 py-2 text-white rounded">Bánh mì</a>
+                                        <img src="/img/traicaytuoi.jfif" className="img-fluid w-100 h-100 rounded" alt="Next slide" />
+                                        <a href="#" className="btn px-4 py-2 text-white rounded">Trái cây</a>
                                     </div>
                                 </div>
                                 <button className="carousel-control-prev" type="button" onClick={prevSlide}><span className="carousel-control-prev-icon"></span></button>
