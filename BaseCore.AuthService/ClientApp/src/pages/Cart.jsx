@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { cartsApi } from '../services/api';
 
 const getProductUnit = (product) => product?.unit || product?.Unit || 'sản phẩm';
+const getProductStock = (product) => Math.floor(Number(product?.stock ?? product?.Stock ?? 0));
 
 const Cart = () => {
     const navigate = useNavigate();
@@ -22,18 +23,41 @@ const Cart = () => {
         }
     }, []);
 
-    const handleQuantityChange = (itemId, change) => {
+    const updateCartItemQuantity = (itemId, nextQuantity) => {
         setCart(cart.map(item => {
             if (item.id === itemId) {
-                const newQuantity = item.quantity + change;
+                const stock = getProductStock(item);
+                const safeQuantity = Number.isFinite(nextQuantity) ? nextQuantity : 1;
+                const normalizedQuantity = Math.max(1, Math.floor(safeQuantity));
+
+                if (stock > 0 && normalizedQuantity > stock) {
+                    alert(`Không đủ hàng trong kho! Sản phẩm này chỉ còn ${stock} ${getProductUnit(item)}.`);
+                    return {
+                        ...item,
+                        quantity: stock
+                    };
+                }
+
                 return {
                     ...item,
-                    quantity: newQuantity > 0 ? newQuantity : 1
+                    quantity: normalizedQuantity
                 };
             }
 
             return item;
         }));
+    };
+
+    const handleQuantityChange = (itemId, change) => {
+        const cartItem = cart.find(item => item.id === itemId);
+        if (!cartItem) return;
+
+        updateCartItemQuantity(itemId, Number(cartItem.quantity || 1) + change);
+    };
+
+    const handleQuantityInputChange = (itemId, value) => {
+        const onlyNumber = value.replace(/\D/g, '');
+        updateCartItemQuantity(itemId, onlyNumber === '' ? 1 : Number(onlyNumber));
     };
 
     const handleRemove = async (itemId) => {
@@ -55,6 +79,16 @@ const Cart = () => {
     const handleProceedCheckout = () => {
         if (cart.length === 0) {
             alert('Giỏ hàng đang trống trơn hà, ní mua thêm đồ đi nhé!');
+            return;
+        }
+
+        const overStockItem = cart.find((item) => {
+            const stock = getProductStock(item);
+            return stock >= 0 && Number(item.quantity || 0) > stock;
+        });
+
+        if (overStockItem) {
+            alert(`Không đủ hàng trong kho cho "${overStockItem.name}". Sản phẩm này chỉ còn ${getProductStock(overStockItem)} ${getProductUnit(overStockItem)}.`);
             return;
         }
 
@@ -353,10 +387,12 @@ const Cart = () => {
                                                         </div>
 
                                                         <input
-                                                            type="text"
+                                                            type="number"
+                                                            min="1"
+                                                            max={getProductStock(item) || undefined}
                                                             className="form-control form-control-sm text-center border-0"
                                                             value={item.quantity}
-                                                            readOnly
+                                                            onChange={(e) => handleQuantityInputChange(item.id, e.target.value)}
                                                         />
 
                                                         <div className="input-group-btn">

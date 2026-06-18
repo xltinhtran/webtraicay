@@ -36,6 +36,7 @@ namespace BaseCore.APIService.Controllers
                 Price = i.Product.Price,
                 DiscountPrice = i.Product.DiscountPrice,
                 Unit = i.Product.Unit,
+                Stock = i.Product.Stock,
                 Quantity = i.Quantity
             });
 
