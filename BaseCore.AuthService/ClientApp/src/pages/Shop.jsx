@@ -9,6 +9,7 @@ const Shop = () => {
   const navigate = useNavigate(); // Thêm cái này để chuyển trang khi chưa đăng nhập
 
   const [products, setProducts] = useState([]);
+  const [totalPages, setTotalPages] = useState(1);
   const [ratingSummary, setRatingSummary] = useState({});
   const [categories, setCategories] = useState([]);
   const [featured, setFeatured] = useState([]);
@@ -26,7 +27,7 @@ const Shop = () => {
   const [cartCount, setCartCount] = useState(0);
 
   const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage =6;
+  const itemsPerPage = 6;
 
   const [searchQuery, setSearchQuery] = useState(
     location.state?.searchTerm || "",
@@ -45,22 +46,7 @@ const Shop = () => {
     setCurrentPage(1);
   }, [searchQuery, selectedCategory, minPrice, maxPrice, additionalFilter]); // Đã đổi state price thành min/maxPrice
 
-  // ========================================================
-  // GỌI API BẰNG SERVICE THAY CHO FETCH CŨ
-  // ========================================================
   useEffect(() => {
-    // TẢI MAX 100 SẢN PHẨM (Khóa mõm cái trò ém hàng của C#)
-    productsApi
-      .getAll({ pageSize: 100 })
-      .then((res) => {
-        const data = res.data;
-        const productList = Array.isArray(data)
-          ? data
-          : data?.items || data?.data || [];
-        setProducts(productList);
-      })
-      .catch((err) => console.log("Lỗi tải SP: ", err));
-
     // TẢI DANH MỤC
     categoriesApi
       .getAll()
@@ -106,6 +92,47 @@ const Shop = () => {
     }
   }, []);
 
+  // ========================================================
+  // LỌC + TÌM KIẾM + PHÂN TRANG BẰNG BACKEND
+  // ========================================================
+  useEffect(() => {
+    const selectedCategoryData = categories.find((c) => c.name === selectedCategory);
+    if (selectedCategory !== "All" && !selectedCategoryData) {
+      return;
+    }
+
+    const quality =
+      additionalFilter === "All"
+        ? undefined
+        : additionalFilter === "Discount"
+          ? "Discount"
+          : additionalFilter;
+
+    productsApi
+      .getAll({
+        keyword: searchQuery || undefined,
+        categoryId:
+          selectedCategory === "All"
+            ? undefined
+            : selectedCategoryData?.id,
+        minPrice: minPrice === "" ? undefined : Number(minPrice),
+        maxPrice: maxPrice === "" ? undefined : Number(maxPrice),
+        quality,
+        page: currentPage,
+        pageSize: itemsPerPage,
+      })
+      .then((res) => {
+        const data = res.data;
+        const productList = Array.isArray(data)
+          ? data
+          : data?.items || data?.data || [];
+
+        setProducts(productList);
+        setTotalPages(data?.totalPages || Math.ceil(productList.length / itemsPerPage) || 1);
+      })
+      .catch((err) => console.log("Lỗi tải SP: ", err));
+  }, [searchQuery, selectedCategory, minPrice, maxPrice, additionalFilter, currentPage, categories]);
+
   // RESET SẠCH SẼ KHI KHÁCH BẤM VÀO MỘT DANH MỤC
   const handleCategoryClick = (e, categoryName) => {
     e.preventDefault();
@@ -123,60 +150,7 @@ const Shop = () => {
     setter(onlyNumber);
   };
 
-  const minPriceNumber = minPrice === "" ? 0 : Number(minPrice);
-  const maxPriceNumber =
-    maxPrice === "" ? Number.MAX_SAFE_INTEGER : Number(maxPrice);
-  const filteredProducts = products.filter((item) => {
-    // 1. Lọc Category
-    const targetCategory = categories.find((c) => c.name === selectedCategory);
-    const matchCategory =
-      selectedCategory === "All" ||
-      item.categoryName === selectedCategory ||
-      item.category?.name === selectedCategory ||
-      (targetCategory && item.categoryId === targetCategory.id);
-
-    // 2. Lọc Tìm kiếm
-    const matchSearch = (item.name || "")
-      .toLowerCase()
-      .includes(searchQuery.toLowerCase());
-
-    // 3. LỌC GIÁ TIỀN VNĐ THEO TỪ - ĐẾN
-    const actualPrice = Number(
-      item.discountPrice || item.DiscountPrice || item.price || 0,
-    );
-
-    const matchPrice =
-      actualPrice >= minPriceNumber && actualPrice <= maxPriceNumber;
-
-    // 4. Lọc Đặc tính (Additional)
-    let matchAdditional = true;
-    const itemQuality = item.quality || item.Quality;
-    const itemDiscount = item.discountPrice || item.DiscountPrice;
-
-    if (additionalFilter === "Organic") {
-      matchAdditional = itemQuality === "Organic";
-    } else if (additionalFilter === "Fresh") {
-      matchAdditional = itemQuality === "Fresh";
-    } else if (additionalFilter === "Expired") {
-      matchAdditional = itemQuality === "Expired";
-    } else if (
-      additionalFilter === "Sales" ||
-      additionalFilter === "Discount"
-    ) {
-      matchAdditional =
-        itemQuality === "Sales" ||
-        itemQuality === "Discount" ||
-        (itemDiscount !== null && itemDiscount > 0);
-    }
-
-    return matchCategory && matchSearch && matchPrice && matchAdditional;
-  });
-
-  const totalPages = Math.ceil(filteredProducts.length / itemsPerPage);
-  const currentProducts = filteredProducts.slice(
-    (currentPage - 1) * itemsPerPage,
-    currentPage * itemsPerPage,
-  );
+  const currentProducts = products;
 
   // --- HÀM THÊM GIỎ HÀNG (ĐÃ SỬ DỤNG AXIOS) ---
   const handleAddToCart = async (e, product) => {

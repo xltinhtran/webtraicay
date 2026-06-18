@@ -1,9 +1,12 @@
 ﻿import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { cartsApi } from '../services/api';
+import { cartsApi, productsApi } from '../services/api';
 
 const getProductUnit = (product) => product?.unit || product?.Unit || 'sản phẩm';
-const getProductStock = (product) => Math.floor(Number(product?.stock ?? product?.Stock ?? 0));
+const getProductStock = (product) => {
+    const stock = Number(product?.stock ?? product?.Stock);
+    return Number.isFinite(stock) ? Math.max(0, Math.floor(stock)) : null;
+};
 
 const Cart = () => {
     const navigate = useNavigate();
@@ -16,7 +19,36 @@ const Cart = () => {
 
         if (currentUserId) {
             cartsApi.getByUserId(currentUserId)
-                .then(res => setCart(res.data))
+                .then(async (res) => {
+                    const cartItems = res.data || [];
+                    const cartItemsWithStock = await Promise.all(
+                        cartItems.map(async (item) => {
+                            if (getProductStock(item) !== null) {
+                                return item;
+                            }
+
+                            const productId = item.productId || item.ProductId;
+                            if (!productId) {
+                                return item;
+                            }
+
+                            try {
+                                const productRes = await productsApi.getById(productId);
+                                const product = productRes.data || {};
+
+                                return {
+                                    ...item,
+                                    stock: product.stock ?? product.Stock
+                                };
+                            } catch (error) {
+                                console.log('Lỗi tải tồn kho sản phẩm: ', error);
+                                return item;
+                            }
+                        })
+                    );
+
+                    setCart(cartItemsWithStock);
+                })
                 .catch(err => console.log('Lỗi tải giỏ hàng: ', err));
         } else {
             setCart([]);
@@ -30,7 +62,17 @@ const Cart = () => {
                 const safeQuantity = Number.isFinite(nextQuantity) ? nextQuantity : 1;
                 const normalizedQuantity = Math.max(1, Math.floor(safeQuantity));
 
-                if (stock > 0 && normalizedQuantity > stock) {
+                if (stock === null) {
+                    alert(`Chưa tải được tồn kho của "${item.name}", vui lòng thử lại sau.`);
+                    return item;
+                }
+
+                if (stock <= 0) {
+                    alert(`Sản phẩm "${item.name}" đã hết hàng.`);
+                    return item;
+                }
+
+                if (normalizedQuantity > stock) {
                     alert(`Không đủ hàng trong kho! Sản phẩm này chỉ còn ${stock} ${getProductUnit(item)}.`);
                     return {
                         ...item,
@@ -57,7 +99,55 @@ const Cart = () => {
 
     const handleQuantityInputChange = (itemId, value) => {
         const onlyNumber = value.replace(/\D/g, '');
-        updateCartItemQuantity(itemId, onlyNumber === '' ? 1 : Number(onlyNumber));
+
+        setCart(cart.map(item => {
+            if (item.id !== itemId) return item;
+
+            if (onlyNumber === '') {
+                return {
+                    ...item,
+                    quantity: ''
+                };
+            }
+
+            const stock = getProductStock(item);
+            const nextQuantity = Number(onlyNumber);
+
+            if (stock === null) {
+                alert(`Chưa tải được tồn kho của "${item.name}", vui lòng thử lại sau.`);
+                return item;
+            }
+
+            if (stock <= 0) {
+                alert(`Sản phẩm "${item.name}" đã hết hàng.`);
+                return item;
+            }
+
+            if (nextQuantity > stock) {
+                alert(`Không đủ hàng trong kho! Sản phẩm này chỉ còn ${stock} ${getProductUnit(item)}.`);
+                return {
+                    ...item,
+                    quantity: stock
+                };
+            }
+
+            return {
+                ...item,
+                quantity: nextQuantity
+            };
+        }));
+    };
+
+    const handleQuantityInputBlur = (itemId) => {
+        setCart(cart.map(item => {
+            if (item.id !== itemId) return item;
+
+            const nextQuantity = Number(item.quantity);
+            return {
+                ...item,
+                quantity: Number.isFinite(nextQuantity) && nextQuantity > 0 ? Math.floor(nextQuantity) : 1
+            };
+        }));
     };
 
     const handleRemove = async (itemId) => {
@@ -73,7 +163,7 @@ const Cart = () => {
 
     const subtotal = cart.reduce((total, item) => {
         const priceToUse = item.discountPrice || item.price;
-        return total + priceToUse * item.quantity;
+        return total + priceToUse * Number(item.quantity || 0);
     }, 0);
 
     const handleProceedCheckout = () => {
@@ -84,7 +174,7 @@ const Cart = () => {
 
         const overStockItem = cart.find((item) => {
             const stock = getProductStock(item);
-            return stock >= 0 && Number(item.quantity || 0) > stock;
+            return stock !== null && Number(item.quantity || 0) > stock;
         });
 
         if (overStockItem) {
@@ -387,12 +477,13 @@ const Cart = () => {
                                                         </div>
 
                                                         <input
-                                                            type="number"
-                                                            min="1"
-                                                            max={getProductStock(item) || undefined}
+                                                            type="text"
+                                                            inputMode="numeric"
+                                                            pattern="[0-9]*"
                                                             className="form-control form-control-sm text-center border-0"
                                                             value={item.quantity}
                                                             onChange={(e) => handleQuantityInputChange(item.id, e.target.value)}
+                                                            onBlur={() => handleQuantityInputBlur(item.id)}
                                                         />
 
                                                         <div className="input-group-btn">
@@ -408,7 +499,7 @@ const Cart = () => {
 
                                                 <td>
                                                     <p className="mb-0 fw-bold text-danger">
-                                                        {(priceToUse * item.quantity).toLocaleString('vi-VN')} VNĐ
+                                                        {(priceToUse * Number(item.quantity || 0)).toLocaleString('vi-VN')} VNĐ
                                                         <small className="d-block text-muted">
                                                             {item.quantity} {getProductUnit(item)}
                                                         </small>

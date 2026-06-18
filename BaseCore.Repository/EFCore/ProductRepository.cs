@@ -49,7 +49,17 @@ namespace BaseCore.Repository.EFCore
             if (!string.IsNullOrWhiteSpace(quality))
             {
                 var normalizedQuality = quality.Trim().ToLower();
-                query = query.Where(p => (p.Quality ?? "").ToLower() == normalizedQuality);
+                if (normalizedQuality == "sales" || normalizedQuality == "discount")
+                {
+                    query = query.Where(p =>
+                        (p.Quality ?? "").ToLower() == "sales" ||
+                        (p.Quality ?? "").ToLower() == "discount" ||
+                        (p.DiscountPrice.HasValue && p.DiscountPrice.Value > 0));
+                }
+                else
+                {
+                    query = query.Where(p => (p.Quality ?? "").ToLower() == normalizedQuality);
+                }
             }
 
             if (!string.IsNullOrWhiteSpace(stockStatus))
