@@ -168,7 +168,7 @@ const Cart = () => {
 
     const handleProceedCheckout = () => {
         if (cart.length === 0) {
-            alert('Giỏ hàng đang trống trơn hà, ní mua thêm đồ đi nhé!');
+            alert('Giỏ hàng đang trống trơn hà,  mua thêm đồ đi nhé!');
             return;
         }
 
